@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { runCli } from "./cli";
+import { runCli } from "./cli/index";
 
 const exitCode = await runCli(Bun.argv.slice(2));
 

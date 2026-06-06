@@ -1,6 +1,6 @@
 import type { Contributor, RateLimitInfo, RepoMetadata } from "../domain/types";
-import { detectContributorBot, GitHubClientError, type GitHubClient, type GitHubListOptions } from "./client";
-import { mapContributorJson, mapRepoJson } from "./gh-adapter";
+import { GitHubClientError, type GitHubClient, type GitHubListOptions } from "./client";
+import { mapGitHubContributor, mapGitHubRepo } from "./response-mapping";
 
 export type GitHubFetch = (input: string, init: { headers: Record<string, string> }) => Promise<Response>;
 
@@ -10,28 +10,8 @@ export interface RestGitHubClientOptions {
   baseUrl?: string;
 }
 
-interface RestRepoJson {
-  name: string;
-  full_name: string;
-  html_url: string;
-  description: string | null;
-  topics?: string[] | null;
-  stargazers_count: number;
-  forks_count: number;
-  language: string | null;
-  fork: boolean;
-  archived: boolean;
-  updated_at: string | null;
-  pushed_at: string | null;
-  owner: { login: string };
-}
-
-interface RestContributorJson {
-  login: string;
-  html_url: string;
-  contributions: number;
-  type?: string | null;
-}
+type GitHubRepoResponse = Parameters<typeof mapGitHubRepo>[0];
+type GitHubContributorResponse = Parameters<typeof mapGitHubContributor>[0];
 
 export class RestGitHubClient implements GitHubClient {
   private readonly fetchImpl: GitHubFetch;
@@ -46,17 +26,14 @@ export class RestGitHubClient implements GitHubClient {
 
   async listUserRepos(username: string, options: GitHubListOptions = {}): Promise<readonly RepoMetadata[]> {
     const path = `/users/${username}/repos`;
-    const repos = await this.fetchPages<RestRepoJson>(path, options.perPage);
-    return repos.map(mapRepoJson);
+    const repos = await this.fetchPages<GitHubRepoResponse>(path, options.perPage);
+    return repos.map(mapGitHubRepo);
   }
 
   async listRepoContributors(owner: string, repo: string, options: GitHubListOptions = {}): Promise<readonly Contributor[]> {
     const path = `/repos/${owner}/${repo}/contributors`;
-    const contributors = await this.fetchPages<RestContributorJson>(path, options.perPage);
-    return contributors.map((contributor) => ({
-      ...mapContributorJson(contributor),
-      isBot: detectContributorBot(contributor.login, contributor.type),
-    }));
+    const contributors = await this.fetchPages<GitHubContributorResponse>(path, options.perPage);
+    return contributors.map(mapGitHubContributor);
   }
 
   private async fetchPages<T>(path: string, perPage = 100): Promise<T[]> {

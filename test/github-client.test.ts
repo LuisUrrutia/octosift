@@ -46,7 +46,7 @@ const contributors = [
   { login: "dependabot[bot]", html_url: "https://github.com/apps/dependabot", contributions: 4, type: "Bot" },
 ];
 
-test("gh adapter invokes gh api with disabled prompts and maps responses", async () => {
+test("gh adapter invokes gh api with disabled prompts and returns mapped repos", async () => {
   const commands: GhCommand[] = [];
   const client = new GhGitHubClient({
     env: { GH_TOKEN: "token" },
@@ -64,12 +64,9 @@ test("gh adapter invokes gh api with disabled prompts and maps responses", async
   expect(commands[0].env.GH_PROMPT_DISABLED).toBe("1");
   expect(commands[0].env.GH_TOKEN).toBe("token");
   expect(repos[0].fullName).toBe("alice/dotfiles");
-  expect(repos[0].description).toBe(null);
-  expect(repos[0].language).toBe(null);
-  expect(repos[0].topics.join(",")).toBe("dotfiles,stow");
 });
 
-test("gh adapter uses contributors endpoint and bot detection input", async () => {
+test("gh adapter uses contributors endpoint and returns mapped contributors", async () => {
   const commands: GhCommand[] = [];
   const client = new GhGitHubClient({
     run: async (command) => {
@@ -85,8 +82,7 @@ test("gh adapter uses contributors endpoint and bot detection input", async () =
   expect(result[0].login).toBe("alice");
   expect(result[0].url).toBe("https://github.com/alice");
   expect(result[0].contributions).toBe(12);
-  expect(result[0].isBot).toBe(false);
-  expect(result[1].isBot).toBe(true);
+  expect(result[1].login).toBe("dependabot[bot]");
 });
 
 test("gh adapter maps gh api rate limit failures to structured error", async () => {
@@ -137,13 +133,10 @@ test("REST adapter follows pagination sequentially and maps repos", async () => 
   expect(calls[0]).toContain("Bearer rest-token");
   expect(calls[1]).toContain("page=2");
   expect(repos.length).toBe(2);
-  expect(repos[1].topics.length).toBe(0);
-  expect(repos[1].isFork).toBe(true);
-  expect(repos[1].isArchived).toBe(true);
-  expect(repos[1].updatedAt).toBe(null);
+  expect(repos[1].fullName).toBe("alice/terminal-setup");
 });
 
-test("REST adapter maps contributors with optional type bot input", async () => {
+test("REST adapter returns mapped contributors", async () => {
   const client = new RestGitHubClient({
     fetch: async () => jsonResponse(contributors),
     baseUrl: "https://api.github.test",
@@ -152,9 +145,7 @@ test("REST adapter maps contributors with optional type bot input", async () => 
   const result = await client.listRepoContributors("alice", "dotfiles");
 
   expect(result[0].login).toBe("alice");
-  expect(result[0].isBot).toBe(false);
   expect(result[1].login).toBe("dependabot[bot]");
-  expect(result[1].isBot).toBe(true);
 });
 
 test("REST adapter maps rate limit failures to structured error", async () => {

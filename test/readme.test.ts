@@ -16,6 +16,8 @@ const requiredTerms = [
   "--no-cache",
   "--cache-ttl <seconds>",
   "--clear-cache",
+  "exclusive commands",
+  "--flag=value",
   "newline-delimited",
   "Blank lines are ignored",
   "Lines starting with `#` are ignored",

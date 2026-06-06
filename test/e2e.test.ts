@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 
 import { FileCache } from "../src/cache/file-cache";
-import { runCli } from "../src/cli";
+import { runCli } from "../src/cli/index";
 import {
   EXIT_CODE_PARTIAL_FAILURE,
   EXIT_CODE_RATE_LIMIT_EXHAUSTED,

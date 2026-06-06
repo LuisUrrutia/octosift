@@ -50,6 +50,8 @@ Use CSV when you want rows instead of JSON:
 bun run dotfiles-finder -- LuisUrrutia --format csv
 ```
 
+Value flags support both `--flag value` and `--flag=value` forms. For example, `--format=csv` is equivalent to `--format csv`.
+
 Useful limits:
 
 ```sh
@@ -69,6 +71,8 @@ bun run dotfiles-finder -- --clear-cache
 ```
 
 Use `--no-cache` to bypass persistent cache reads and writes, `--cache-ttl <seconds>` to set a finite integer TTL where `0` refreshes every run, and `--clear-cache` to delete the cache directory and exit without scanning.
+
+The exclusive commands `--help`, `--version`, and `--clear-cache` cannot be combined with scan inputs or scan flags.
 
 ## Accepted input forms
 

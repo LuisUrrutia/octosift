@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 
 import { FileCache } from "../src/cache/file-cache";
-import { runCli } from "../src/cli";
+import { runCli } from "../src/cli/index";
 import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS, type ScanResult, type ScanWarning } from "../src/domain/types";
 import { scanInputs } from "../src/scan/scanner";
 import { FakeGitHubClient, createFakeGitHubApiError } from "./fakes/fake-github-client";
@@ -38,6 +38,10 @@ test("help documents cache flags without selecting a GitHub client", async () =>
   expect(io.stdout.join("\n")).toContain("--no-cache");
   expect(io.stdout.join("\n")).toContain("--cache-ttl <seconds>");
   expect(io.stdout.join("\n")).toContain("--clear-cache");
+  expect(io.stdout.join("\n")).toContain("--help");
+  expect(io.stdout.join("\n").includes("--help, -h")).toBe(false);
+  expect(io.stdout.join("\n").includes("--version, -v")).toBe(false);
+  expect(io.stdout.join("\n")).toContain("exclusive");
   expect(io.stderr.join("\n")).toBe("");
 });
 
@@ -133,6 +137,51 @@ test("prints version without selecting a GitHub client", async () => {
   expect(io.stderr.join("\n")).toBe("");
 });
 
+test("rejects exclusive commands mixed with scan inputs before selecting a GitHub client", async () => {
+  const io = createIo();
+  const exitCode = await runCli(["--help", "alice"], io.writers, {
+    createDefaultGitHubClient: async () => {
+      throw new Error("GitHub should not be touched after parse errors");
+    },
+  });
+
+  expect(exitCode).toBe(1);
+  expect(io.stdout.join("\n")).toBe("");
+  expect(io.stderr.join("\n")).toContain("--help cannot be combined with scan inputs or flags");
+});
+
+test("rejects short aliases as unknown options", async () => {
+  const io = createIo();
+  const exitCode = await runCli(["-h"], io.writers, {
+    createDefaultGitHubClient: async () => {
+      throw new Error("GitHub should not be touched after parse errors");
+    },
+  });
+
+  expect(exitCode).toBe(1);
+  expect(io.stdout.join("\n")).toBe("");
+  expect(io.stderr.join("\n")).toContain("Unknown option: -h");
+});
+
+test("valid scan flags without inputs still reach input normalization", async () => {
+  const io = createIo();
+  const seenArgs: readonly string[][] = [];
+  const exitCode = await runCli(["--format", "csv"], io.writers, {
+    normalizeInputs: async (args) => {
+      (seenArgs as string[][]).push([...args]);
+      return { inputs: [], errors: [] };
+    },
+    createDefaultGitHubClient: async () => {
+      throw new Error("GitHub should not be touched after empty normalized inputs");
+    },
+  });
+
+  expect(exitCode).toBe(1);
+  expect(seenArgs[0]).toEqual([]);
+  expect(io.stdout.join("\n")).toBe("");
+  expect(io.stderr.join("\n")).toContain("At least one GitHub user, repository, URL, or input file is required.");
+});
+
 test("scans a user and writes JSON by default", async () => {
   const io = createIo();
   const client = new FakeGitHubClient();
@@ -186,7 +235,7 @@ test("rejects invalid format and numeric flags with exit 1 and empty stdout", as
 
   expect(invalidFormatExit).toBe(1);
   expect(invalidFormat.stdout.join("\n")).toBe("");
-  expect(invalidFormat.stderr.join("\n")).toContain("Invalid --format value: xml");
+  expect(invalidFormat.stderr.join("\n")).toContain("--format must be one of: json, csv");
   expect(invalidNumberExit).toBe(1);
   expect(invalidNumber.stdout.join("\n")).toBe("");
   expect(invalidNumber.stderr.join("\n")).toContain("Invalid --max-repos value: 0");

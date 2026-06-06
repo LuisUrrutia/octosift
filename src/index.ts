@@ -1,1 +1,1 @@
-export { VERSION, formatUsage, runCli } from "./cli";
+export { VERSION, formatUsage, runCli, type CliDependencies, type CliWriters } from "./cli/index";

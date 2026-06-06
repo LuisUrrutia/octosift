@@ -55,7 +55,3 @@ export function createUnauthenticatedRestWarning(): ScanWarning {
     message: "Using unauthenticated GitHub REST API; rate limits will be lower.",
   };
 }
-
-export function detectContributorBot(login: string, type?: string | null): boolean {
-  return type === "Bot" || login.toLowerCase().includes("[bot]");
-}
