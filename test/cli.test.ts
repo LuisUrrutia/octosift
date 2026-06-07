@@ -1,17 +1,16 @@
 import { mkdtemp } from "node:fs/promises";
-import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 
 import { FileCache } from "../src/cache/file-cache";
 import { runCli } from "../src/cli/index";
-import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS, type ScanResult, type ScanWarning } from "../src/domain/types";
-import { scanInputs } from "../src/scan/index";
+import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS, type ScanWarning } from "../src/domain/types";
+import { createCliIo, createFakeCliDependencies, createTempCliCacheDir, emptyScanResult, runCliForTest } from "./cli-harness";
 import { FakeGitHubClient, createFakeGitHubApiError } from "./fakes/fake-github-client";
 
 test("prints expanded help without selecting a GitHub client", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const exitCode = await runCli(["--help"], io.writers, {
     createDefaultGitHubClient: async () => {
       throw new Error("GitHub should not be touched for help");
@@ -27,7 +26,7 @@ test("prints expanded help without selecting a GitHub client", async () => {
 
 
 test("help documents cache flags without selecting a GitHub client", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const exitCode = await runCli(["--help"], io.writers, {
     createDefaultGitHubClient: async () => {
       throw new Error("GitHub should not be touched for help");
@@ -46,14 +45,14 @@ test("help documents cache flags without selecting a GitHub client", async () =>
 });
 
 test("caches GitHub API responses by default across CLI runs", async () => {
-  const cacheDir = await tempCacheDir();
-  const firstIo = createIo();
+  const cacheDir = await createTempCliCacheDir();
+  const firstIo = createCliIo();
   const firstClient = new FakeGitHubClient();
-  const firstExit = await runCli(["alice"], firstIo.writers, fakeDependencies(firstClient, [], cacheDir));
+  const firstExit = await runCli(["alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
 
-  const secondIo = createIo();
+  const secondIo = createCliIo();
   const secondClient = new FakeGitHubClient();
-  const secondExit = await runCli(["alice"], secondIo.writers, fakeDependencies(secondClient, [], cacheDir));
+  const secondExit = await runCli(["alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
 
   expect(firstExit).toBe(EXIT_CODE_SUCCESS);
   expect(secondExit).toBe(EXIT_CODE_SUCCESS);
@@ -62,37 +61,53 @@ test("caches GitHub API responses by default across CLI runs", async () => {
   expect(JSON.parse(secondIo.stdout.join("\n")).length).toBeGreaterThan(0);
 });
 
-test("--no-cache bypasses the persistent GitHub API cache", async () => {
-  const cacheDir = await tempCacheDir();
-  const firstIo = createIo();
-  const firstClient = new FakeGitHubClient();
-  await runCli(["--no-cache", "alice"], firstIo.writers, fakeDependencies(firstClient, [], cacheDir));
+test("caches GitHub API responses separately by selected client mode", async () => {
+  const cacheDir = await createTempCliCacheDir();
+  const publicIo = createCliIo();
+  const publicClient = new FakeGitHubClient();
+  const publicExit = await runCli(["alice"], publicIo.writers, createFakeCliDependencies(publicClient, { kind: "rest-public", cacheDir }));
 
-  const secondIo = createIo();
+  const tokenIo = createCliIo();
+  const tokenClient = new FakeGitHubClient();
+  const tokenExit = await runCli(["alice"], tokenIo.writers, createFakeCliDependencies(tokenClient, { kind: "rest-token", cacheDir }));
+
+  expect(publicExit).toBe(EXIT_CODE_SUCCESS);
+  expect(tokenExit).toBe(EXIT_CODE_SUCCESS);
+  expect(publicClient.callOrder).toEqual(["listUserRepos:alice"]);
+  expect(tokenClient.callOrder).toEqual(["listUserRepos:alice"]);
+});
+
+test("--no-cache bypasses the persistent GitHub API cache", async () => {
+  const cacheDir = await createTempCliCacheDir();
+  const firstIo = createCliIo();
+  const firstClient = new FakeGitHubClient();
+  await runCli(["--no-cache", "alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
+
+  const secondIo = createCliIo();
   const secondClient = new FakeGitHubClient();
-  await runCli(["--no-cache", "alice"], secondIo.writers, fakeDependencies(secondClient, [], cacheDir));
+  await runCli(["--no-cache", "alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
 
   expect(firstClient.callOrder).toEqual(["listUserRepos:alice"]);
   expect(secondClient.callOrder).toEqual(["listUserRepos:alice"]);
 });
 
 test("--cache-ttl accepts zero and refreshes every run", async () => {
-  const cacheDir = await tempCacheDir();
-  const firstIo = createIo();
+  const cacheDir = await createTempCliCacheDir();
+  const firstIo = createCliIo();
   const firstClient = new FakeGitHubClient();
-  await runCli(["--cache-ttl", "0", "alice"], firstIo.writers, fakeDependencies(firstClient, [], cacheDir));
+  await runCli(["--cache-ttl", "0", "alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
 
-  const secondIo = createIo();
+  const secondIo = createCliIo();
   const secondClient = new FakeGitHubClient();
-  await runCli(["--cache-ttl", "0", "alice"], secondIo.writers, fakeDependencies(secondClient, [], cacheDir));
+  await runCli(["--cache-ttl", "0", "alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
 
   expect(firstClient.callOrder).toEqual(["listUserRepos:alice"]);
   expect(secondClient.callOrder).toEqual(["listUserRepos:alice"]);
 });
 
 test("rejects invalid --cache-ttl values", async () => {
-  const io = createIo();
-  const exitCode = await runCli(["--cache-ttl", "1.5", "alice"], io.writers, fakeDependencies(new FakeGitHubClient()));
+  const io = createCliIo();
+  const exitCode = await runCli(["--cache-ttl", "1.5", "alice"], io.writers, createFakeCliDependencies(new FakeGitHubClient()));
 
   expect(exitCode).toBe(1);
   expect(io.stdout.join("\n")).toBe("");
@@ -100,10 +115,10 @@ test("rejects invalid --cache-ttl values", async () => {
 });
 
 test("--clear-cache clears cache and exits before selecting a GitHub client or scanning", async () => {
-  const cacheDir = await tempCacheDir();
+  const cacheDir = await createTempCliCacheDir();
   const cache = new FileCache({ baseDir: cacheDir });
   await cache.write("user-repos:alice", [{ fullName: "alice/dotfiles" }], 60);
-  const io = createIo();
+  const io = createCliIo();
   let scanned = false;
 
   const exitCode = await runCli(["--clear-cache"], io.writers, {
@@ -125,7 +140,7 @@ test("--clear-cache clears cache and exits before selecting a GitHub client or s
 });
 
 test("prints version without selecting a GitHub client", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const exitCode = await runCli(["--version"], io.writers, {
     createDefaultGitHubClient: async () => {
       throw new Error("GitHub should not be touched for version");
@@ -138,20 +153,21 @@ test("prints version without selecting a GitHub client", async () => {
 });
 
 test("rejects exclusive commands mixed with scan inputs before selecting a GitHub client", async () => {
-  const io = createIo();
-  const exitCode = await runCli(["--help", "alice"], io.writers, {
-    createDefaultGitHubClient: async () => {
-      throw new Error("GitHub should not be touched after parse errors");
+  const result = await runCliForTest(["--help", "alice"], {
+    dependencies: {
+      createDefaultGitHubClient: async () => {
+        throw new Error("GitHub should not be touched after parse errors");
+      },
     },
   });
 
-  expect(exitCode).toBe(1);
-  expect(io.stdout.join("\n")).toBe("");
-  expect(io.stderr.join("\n")).toContain("--help cannot be combined with scan inputs or flags");
+  expect(result.exitCode).toBe(1);
+  expect(result.stdout.join("\n")).toBe("");
+  expect(result.stderr.join("\n")).toContain("--help cannot be combined with scan inputs or flags");
 });
 
 test("rejects short aliases as unknown options", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const exitCode = await runCli(["-h"], io.writers, {
     createDefaultGitHubClient: async () => {
       throw new Error("GitHub should not be touched after parse errors");
@@ -164,11 +180,11 @@ test("rejects short aliases as unknown options", async () => {
 });
 
 test("valid scan flags without inputs still reach input normalization", async () => {
-  const io = createIo();
-  const seenArgs: readonly string[][] = [];
+  const io = createCliIo();
+  const seenArgs: unknown[][] = [];
   const exitCode = await runCli(["--format", "csv"], io.writers, {
     normalizeInputs: async (args) => {
-      (seenArgs as string[][]).push([...args]);
+      seenArgs.push([...args]);
       return { inputs: [], errors: [] };
     },
     createDefaultGitHubClient: async () => {
@@ -183,9 +199,9 @@ test("valid scan flags without inputs still reach input normalization", async ()
 });
 
 test("scans a user and writes JSON by default", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const client = new FakeGitHubClient();
-  const exitCode = await runCli(["alice"], io.writers, fakeDependencies(client));
+  const exitCode = await runCli(["alice"], io.writers, createFakeCliDependencies(client));
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
   expect(io.stderr.join("\n")).toBe("");
@@ -196,9 +212,9 @@ test("scans a user and writes JSON by default", async () => {
 });
 
 test("routes CSV format and keeps warnings off stdout", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const client = new FakeGitHubClient();
-  const exitCode = await runCli(["--format", "csv", "alice"], io.writers, fakeDependencies(client));
+  const exitCode = await runCli(["--format", "csv", "alice"], io.writers, createFakeCliDependencies(client));
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
   expect(io.stdout[0].startsWith("url,owner,name,fullName,description,topics")).toBe(true);
@@ -206,32 +222,47 @@ test("routes CSV format and keeps warnings off stdout", async () => {
   expect(io.stderr.join("\n")).toBe("");
 });
 
-test("passes --file and @path through normalizeInputs", async () => {
-  const io = createIo();
-  const seenArgs: readonly string[][] = [];
-  const exitCode = await runCli(["--file", "inputs.txt", "@more.txt"], io.writers, {
-    normalizeInputs: async (args) => {
-      (seenArgs as string[][]).push([...args]);
+test("expands --file and @path before normalizing scan inputs", async () => {
+  const io = createCliIo();
+  const tempDir = await mkdtemp(join(tmpdir(), "dotfiles-finder-cli-input-test-"));
+  const inputFile = join(tempDir, "inputs.txt");
+  const moreFile = join(tempDir, "more.txt");
+  await Bun.write(inputFile, ["# ignored", " alice ", "", "bob"].join("\n"));
+  await Bun.write(moreFile, "https://github.com/charlie/workstation/issues\n");
+  const seenValues: unknown[] = [];
+
+  const exitCode = await runCli(["--file", inputFile, `@${moreFile}`], io.writers, {
+    normalizeInputs: async (values) => {
+      seenValues.push(...values);
       return {
         inputs: [{ kind: "user", login: "alice", url: "https://github.com/alice" }],
         errors: [],
       };
     },
-    createDefaultGitHubClient: async () => ({ kind: "rest-token", client: new FakeGitHubClient(), warnings: [] }),
+    createDefaultGitHubClient: async () => ({
+      kind: "rest-token",
+      cachePartition: { kind: "rest-token", credentialIdentity: "test-token:sha256:stable" },
+      client: new FakeGitHubClient(),
+      warnings: [],
+    }),
     scanInputs: async () => emptyScanResult(0),
   });
 
   expect(exitCode).toBe(0);
-  expect(JSON.stringify(seenArgs[0])).toBe(JSON.stringify(["--file", "inputs.txt", "@more.txt"]));
+  expect(seenValues).toEqual([
+    { value: "alice", source: "--file" },
+    { value: "bob", source: "--file" },
+    { value: "https://github.com/charlie/workstation/issues", source: `@${moreFile}` },
+  ]);
   expect(io.stdout.join("\n")).toBe("[]");
   expect(io.stderr.join("\n")).toBe("");
 });
 
 test("rejects invalid format and numeric flags with exit 1 and empty stdout", async () => {
-  const invalidFormat = createIo();
-  const invalidFormatExit = await runCli(["--format", "xml", "alice"], invalidFormat.writers, fakeDependencies(new FakeGitHubClient()));
-  const invalidNumber = createIo();
-  const invalidNumberExit = await runCli(["--max-repos", "0", "alice"], invalidNumber.writers, fakeDependencies(new FakeGitHubClient()));
+  const invalidFormat = createCliIo();
+  const invalidFormatExit = await runCli(["--format", "xml", "alice"], invalidFormat.writers, createFakeCliDependencies(new FakeGitHubClient()));
+  const invalidNumber = createCliIo();
+  const invalidNumberExit = await runCli(["--max-repos", "0", "alice"], invalidNumber.writers, createFakeCliDependencies(new FakeGitHubClient()));
 
   expect(invalidFormatExit).toBe(1);
   expect(invalidFormat.stdout.join("\n")).toBe("");
@@ -242,7 +273,7 @@ test("rejects invalid format and numeric flags with exit 1 and empty stdout", as
 });
 
 test("normalizer errors exit 1 before selecting a GitHub client", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const exitCode = await runCli(["bad/input/value"], io.writers, {
     normalizeInputs: async () => ({
       inputs: [],
@@ -259,9 +290,9 @@ test("normalizer errors exit 1 before selecting a GitHub client", async () => {
 });
 
 test("client selection warnings go to stderr while stdout stays valid JSON", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const warning: ScanWarning = { code: "partial-failure", message: "Using unauthenticated GitHub REST API; rate limits will be lower." };
-  const exitCode = await runCli(["alice"], io.writers, fakeDependencies(new FakeGitHubClient(), [warning]));
+  const exitCode = await runCli(["alice"], io.writers, createFakeCliDependencies(new FakeGitHubClient(), { warnings: [warning] }));
 
   expect(exitCode).toBe(0);
   expect(Array.isArray(JSON.parse(io.stdout.join("\n")))).toBe(true);
@@ -269,11 +300,11 @@ test("client selection warnings go to stderr while stdout stays valid JSON", asy
 });
 
 test("partial scanner warnings map to exit 2 with usable JSON", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const client = new FakeGitHubClient();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(403, "bob forbidden"));
 
-  const exitCode = await runCli(["alice", "bob"], io.writers, fakeDependencies(client));
+  const exitCode = await runCli(["alice", "bob"], io.writers, createFakeCliDependencies(client));
   const output = JSON.parse(io.stdout.join("\n")) as { fullName: string }[];
 
   expect(exitCode).toBe(EXIT_CODE_PARTIAL_FAILURE);
@@ -282,11 +313,11 @@ test("partial scanner warnings map to exit 2 with usable JSON", async () => {
 });
 
 test("rate-limit scanner warnings map to exit 3 with valid partial JSON", async () => {
-  const io = createIo();
+  const io = createCliIo();
   const client = new FakeGitHubClient();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(429, "rate limited", 30));
 
-  const exitCode = await runCli(["alice", "bob", "charlie"], io.writers, fakeDependencies(client));
+  const exitCode = await runCli(["alice", "bob", "charlie"], io.writers, createFakeCliDependencies(client));
   const output = JSON.parse(io.stdout.join("\n")) as { fullName: string }[];
 
   expect(exitCode).toBe(EXIT_CODE_RATE_LIMIT_EXHAUSTED);
@@ -295,38 +326,3 @@ test("rate-limit scanner warnings map to exit 3 with valid partial JSON", async 
   expect(io.stderr.join("\n")).toContain("rate-limit: rate limited");
   expect(io.stderr.join("\n")).toContain("retry-after=30s");
 });
-
-function createIo(): { stdout: string[]; stderr: string[]; writers: { stdout(value: string): void; stderr(value: string): void } } {
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-
-  return {
-    stdout,
-    stderr,
-    writers: {
-      stdout: (value) => stdout.push(value),
-      stderr: (value) => stderr.push(value),
-    },
-  };
-}
-
-function fakeDependencies(client: FakeGitHubClient, warnings: readonly ScanWarning[] = [], cacheDir = mkdtempSync(join(tmpdir(), "dotfiles-finder-cli-cache-test-"))) {
-  return {
-    createDefaultGitHubClient: async () => ({ kind: "rest-token" as const, client, warnings }),
-    createFileCache: () => new FileCache({ baseDir: cacheDir }),
-    scanInputs,
-  };
-}
-
-async function tempCacheDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "dotfiles-finder-cli-cache-test-"));
-}
-
-function emptyScanResult(exitCode: 0): ScanResult {
-  return {
-    candidates: [],
-    warnings: [],
-    partialFailure: false,
-    exitCode,
-  };
-}

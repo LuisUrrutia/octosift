@@ -11,8 +11,14 @@ export interface GitHubClient {
 
 export type GitHubClientKind = "gh" | "rest-token" | "rest-public";
 
+export type GitHubCachePartition =
+  | { kind: "gh" }
+  | { kind: "rest-token"; credentialIdentity: string }
+  | { kind: "rest-public" };
+
 export interface SelectedGitHubClient {
   kind: GitHubClientKind;
+  cachePartition: GitHubCachePartition;
   client: GitHubClient;
   warnings: readonly ScanWarning[];
 }

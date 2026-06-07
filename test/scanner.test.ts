@@ -38,6 +38,15 @@ test("scanner expands repository contributors one hop and excludes bots", async 
   expect(duplicate.sourceInput.join(",")).toBe("alice/dotfiles");
 });
 
+test("scanner excludes contributors matched by the shared bot policy", async () => {
+  const client = new PatternBotContributorClient();
+  const result = await scanInputs([repoInput("org", "project")], client);
+
+  expect(result.exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(client.callOrder).toEqual(["listRepoContributors:org/project", "listUserRepos:alice"]);
+  expect(result.candidates.map((candidate) => candidate.fullName)).toEqual(["alice/dotfiles"]);
+});
+
 test("scanner defaults maxContributors to 50 humans after bot filtering", async () => {
   const client = new ManyContributorsClient(55);
   const result = await scanInputs([repoInput("org", "project")], client);
@@ -149,6 +158,23 @@ class ManyContributorsClient implements GitHubClient {
     }
 
     return contributors;
+  }
+
+  async listUserRepos(username: string): Promise<readonly RepoMetadata[]> {
+    this.callOrder.push(`listUserRepos:${username}`);
+    return [{ ...cloneRepo(GITHUB_FIXTURE_REPOS[0]), owner: username, fullName: `${username}/dotfiles`, url: `https://github.com/${username}/dotfiles` }];
+  }
+}
+
+class PatternBotContributorClient implements GitHubClient {
+  readonly callOrder: string[] = [];
+
+  async listRepoContributors(owner: string, repo: string): Promise<readonly Contributor[]> {
+    this.callOrder.push(`listRepoContributors:${owner}/${repo}`);
+    return [
+      { login: "renovate", url: "https://github.com/renovate", contributions: 8, isBot: false },
+      { login: "alice", url: "https://github.com/alice", contributions: 3, isBot: false },
+    ];
   }
 
   async listUserRepos(username: string): Promise<readonly RepoMetadata[]> {

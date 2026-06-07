@@ -2,10 +2,11 @@ import { FileCache } from "../cache/file-cache";
 import { EXIT_CODE_INVALID_INPUT, type DotfilesCandidate, type ExitCode, type ScanResult } from "../domain/types";
 import { type SelectedGitHubClient } from "../github/client";
 import { createDefaultGitHubClient } from "../github/select-client";
-import { normalizeInputs, type NormalizeInputsOptions, type NormalizeInputsResult } from "../input/normalize";
+import { normalizeInputs, type NormalizeInputValue, type NormalizeInputsResult } from "../input/normalize";
 import { formatOutput, type OutputFormat } from "../output/format";
 import { scanInputs, type ScanOptions } from "../scan/index";
 import { parseCommandIntent } from "./command-intent";
+import { expandCliInputArgs, type ExpandCliInputArgsOptions, type ExpandCliInputArgsResult } from "./input-expansion";
 import {
   formatClientConfigurationError,
   formatInputErrors,
@@ -23,7 +24,8 @@ const EMPTY_INPUT_ERROR = "At least one GitHub user, repository, URL, or input f
 export type { CliWriters } from "./emission";
 
 export interface CliDependencies {
-  normalizeInputs(args: readonly string[], options?: NormalizeInputsOptions): Promise<NormalizeInputsResult>;
+  expandInputArgs(args: readonly string[], options?: ExpandCliInputArgsOptions): Promise<ExpandCliInputArgsResult>;
+  normalizeInputs(values: readonly NormalizeInputValue[]): Promise<NormalizeInputsResult>;
   createDefaultGitHubClient(): Promise<SelectedGitHubClient>;
   scanInputs(inputs: NormalizeInputsResult["inputs"], client: SelectedGitHubClient["client"], options: ScanOptions): Promise<ScanResult>;
   formatOutput(candidates: readonly DotfilesCandidate[], format: OutputFormat): string;
@@ -82,10 +84,12 @@ export async function runCli(args: string[], writers: Partial<CliWriters> = {}, 
       await resolvedDependencies.createFileCache().clear();
       return 0;
     case "scan": {
-      const normalized = await resolvedDependencies.normalizeInputs(intent.inputArgs);
+      const expanded = await resolvedDependencies.expandInputArgs(intent.inputArgs);
+      const normalized = await resolvedDependencies.normalizeInputs(expanded.values);
+      const inputErrors = [...expanded.errors, ...normalized.errors];
 
-      if (normalized.errors.length > 0 || normalized.inputs.length === 0) {
-        writeErrors(resolvedWriters, formatInputErrors(normalized.errors, EMPTY_INPUT_ERROR));
+      if (inputErrors.length > 0 || normalized.inputs.length === 0) {
+        writeErrors(resolvedWriters, formatInputErrors(inputErrors, EMPTY_INPUT_ERROR));
         return EXIT_CODE_INVALID_INPUT;
       }
 
@@ -117,6 +121,7 @@ function resolveWriters(writers: Partial<CliWriters>): CliWriters {
 
 function resolveDependencies(dependencies: Partial<CliDependencies>): CliDependencies {
   return {
+    expandInputArgs: expandCliInputArgs,
     normalizeInputs,
     createDefaultGitHubClient,
     scanInputs,

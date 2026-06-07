@@ -1,4 +1,4 @@
-import { createUnauthenticatedRestWarning, type GitHubClient, type SelectedGitHubClient } from "./client";
+import { createUnauthenticatedRestWarning, type GitHubClient, type GitHubCachePartition, type SelectedGitHubClient } from "./client";
 import { GhGitHubClient, type GhCommandRunner } from "./gh-adapter";
 import { RestGitHubClient, type GitHubFetch } from "./rest-adapter";
 
@@ -23,26 +23,57 @@ export async function selectGitHubClient(options: SelectGitHubClientOptions): Pr
   if (await options.probes.isGhAuthenticated()) {
     return {
       kind: "gh",
+      cachePartition: { kind: "gh" },
       client: new GhGitHubClient({ run: options.ghRunner, env: options.env }),
       warnings: [],
     };
   }
 
-  const token = options.env?.GH_TOKEN ?? options.env?.GITHUB_TOKEN;
+  const tokenSelection = selectToken(options.env);
 
-  if (token !== undefined && token.length > 0) {
+  if (tokenSelection !== undefined) {
     return {
       kind: "rest-token",
-      client: new RestGitHubClient({ fetch: options.fetch, token }),
+      cachePartition: await restTokenCachePartition(tokenSelection),
+      client: new RestGitHubClient({ fetch: options.fetch, token: tokenSelection.token }),
       warnings: [],
     };
   }
 
   return {
     kind: "rest-public",
+    cachePartition: { kind: "rest-public" },
     client: new RestGitHubClient({ fetch: options.fetch }),
     warnings: [createUnauthenticatedRestWarning()],
   };
+}
+
+interface SelectedToken {
+  source: "GH_TOKEN" | "GITHUB_TOKEN";
+  token: string;
+}
+
+function selectToken(env: GitHubClientSelectionEnv | undefined): SelectedToken | undefined {
+  const ghToken = env?.GH_TOKEN;
+
+  if (ghToken !== undefined) {
+    return ghToken.length > 0 ? { source: "GH_TOKEN", token: ghToken } : undefined;
+  }
+
+  const githubToken = env?.GITHUB_TOKEN;
+  return githubToken !== undefined && githubToken.length > 0 ? { source: "GITHUB_TOKEN", token: githubToken } : undefined;
+}
+
+async function restTokenCachePartition(tokenSelection: SelectedToken): Promise<GitHubCachePartition> {
+  return {
+    kind: "rest-token",
+    credentialIdentity: `${tokenSelection.source}:sha256:${await sha256Hex(tokenSelection.token)}`,
+  };
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }
 
 export async function probeGhAuthenticated(run: GhCommandRunner): Promise<boolean> {

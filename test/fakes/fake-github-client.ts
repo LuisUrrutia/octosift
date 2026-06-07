@@ -1,13 +1,6 @@
 import type { Contributor, RepoMetadata } from "../../src/domain/types";
+import type { GitHubClient, GitHubListOptions } from "../../src/github/client";
 import { cloneContributor, cloneRepo, GITHUB_FIXTURE_CONTRIBUTORS, GITHUB_FIXTURE_USER_REPOS } from "../fixtures/github";
-
-export interface ListReposOptions {
-  perPage?: number;
-}
-
-export interface ListContributorsOptions {
-  perPage?: number;
-}
 
 export interface FakeGitHubApiError extends Error {
   status: 403 | 429;
@@ -18,7 +11,7 @@ export interface FakeGitHubApiError extends Error {
 export interface FakeGitHubClientCall {
   method: "listUserRepos" | "listRepoContributors";
   target: string;
-  options: ListReposOptions | ListContributorsOptions;
+  options: GitHubListOptions;
 }
 
 interface QueuedFailure {
@@ -27,7 +20,7 @@ interface QueuedFailure {
   error: FakeGitHubApiError;
 }
 
-export class FakeGitHubClient {
+export class FakeGitHubClient implements GitHubClient {
   readonly callOrder: string[] = [];
   readonly calls: FakeGitHubClientCall[] = [];
 
@@ -37,7 +30,7 @@ export class FakeGitHubClient {
     this.failures.push({ method, target, error });
   }
 
-  async listUserRepos(username: string, options: ListReposOptions = {}): Promise<readonly RepoMetadata[]> {
+  async listUserRepos(username: string, options: GitHubListOptions = {}): Promise<readonly RepoMetadata[]> {
     this.recordCall("listUserRepos", username, options);
     this.throwQueuedFailure("listUserRepos", username);
 
@@ -45,7 +38,7 @@ export class FakeGitHubClient {
     return repos.map(cloneRepo);
   }
 
-  async listRepoContributors(owner: string, repo: string, options: ListContributorsOptions = {}): Promise<readonly Contributor[]> {
+  async listRepoContributors(owner: string, repo: string, options: GitHubListOptions = {}): Promise<readonly Contributor[]> {
     const target = `${owner}/${repo}`;
     this.recordCall("listRepoContributors", target, options);
     this.throwQueuedFailure("listRepoContributors", target);
@@ -54,7 +47,7 @@ export class FakeGitHubClient {
     return contributors.map(cloneContributor);
   }
 
-  private recordCall(method: FakeGitHubClientCall["method"], target: string, options: ListReposOptions | ListContributorsOptions): void {
+  private recordCall(method: FakeGitHubClientCall["method"], target: string, options: GitHubListOptions): void {
     this.callOrder.push(`${method}:${target}`);
     this.calls.push({ method, target, options });
   }

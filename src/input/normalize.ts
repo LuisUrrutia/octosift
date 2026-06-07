@@ -1,17 +1,6 @@
 import type { NormalizedInput, RepositoryRef, UserRef } from "../domain/types";
 
-type ReadFile = (path: string) => string | Promise<string>;
-
-interface BunFileReader {
-  file(path: string): {
-    text(): Promise<string>;
-  };
-}
-
-export type InputNormalizationErrorCode =
-  | "invalid-input"
-  | "missing-file-path"
-  | "file-read-failed";
+export type InputNormalizationErrorCode = "invalid-input" | "missing-file-path" | "file-read-failed";
 
 export interface InputNormalizationError {
   code: InputNormalizationErrorCode;
@@ -20,9 +9,14 @@ export interface InputNormalizationError {
   source?: string;
 }
 
-export interface NormalizeInputsOptions {
-  readFile?: ReadFile;
+export interface GitHubInputValue {
+  value: string;
+  source?: string;
 }
+
+export type NormalizeInputValue = string | GitHubInputValue;
+
+export type NormalizeInputsOptions = Record<never, never>;
 
 export interface NormalizeInputsResult {
   inputs: NormalizedInput[];
@@ -34,10 +28,9 @@ const USERNAME_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const REPOSITORY_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 export async function normalizeInputs(
-  args: readonly string[],
-  options: NormalizeInputsOptions = {},
+  values: readonly NormalizeInputValue[],
+  _options: NormalizeInputsOptions = {},
 ): Promise<NormalizeInputsResult> {
-  const readFile = options.readFile ?? readTextFile;
   const inputs: NormalizedInput[] = [];
   const errors: InputNormalizationError[] = [];
   const seen = new Set<string>();
@@ -64,65 +57,9 @@ export async function normalizeInputs(
     addInput(parsed.input);
   };
 
-  const expandFile = async (path: string, source: string): Promise<void> => {
-    try {
-      const text = await readFile(path);
-      for (const line of text.split(/\r?\n/)) {
-        const trimmedLine = line.trim();
-
-        if (trimmedLine.length === 0 || trimmedLine.startsWith("#")) {
-          continue;
-        }
-
-        addParsedInput(trimmedLine, source);
-      }
-    } catch (error) {
-      errors.push({
-        code: "file-read-failed",
-        input: path,
-        message: `Could not read input file: ${path}`,
-        source,
-      });
-    }
-  };
-
-  for (let index = 0; index < args.length; index += 1) {
-    const rawArg = args[index];
-
-    if (rawArg === "--file") {
-      const path = args[index + 1];
-
-      if (path === undefined || path.trim().length === 0) {
-        errors.push({
-          code: "missing-file-path",
-          input: rawArg,
-          message: "Missing path after --file",
-        });
-        continue;
-      }
-
-      await expandFile(path, rawArg);
-      index += 1;
-      continue;
-    }
-
-    if (rawArg.startsWith("@")) {
-      const path = rawArg.slice(1);
-
-      if (path.trim().length === 0) {
-        errors.push({
-          code: "missing-file-path",
-          input: rawArg,
-          message: "Missing path after @",
-        });
-        continue;
-      }
-
-      await expandFile(path, rawArg);
-      continue;
-    }
-
-    addParsedInput(rawArg);
+  for (const rawValue of values) {
+    const inputValue = typeof rawValue === "string" ? { value: rawValue } : rawValue;
+    addParsedInput(inputValue.value, inputValue.source);
   }
 
   return { inputs, errors };
@@ -237,14 +174,4 @@ function invalidInput(input: string, source?: string): { error: InputNormalizati
       source,
     },
   };
-}
-
-async function readTextFile(path: string): Promise<string> {
-  const bun = (globalThis as typeof globalThis & { Bun?: BunFileReader }).Bun;
-
-  if (bun === undefined) {
-    throw new Error("Bun file reader is unavailable");
-  }
-
-  return bun.file(path).text();
 }

@@ -210,6 +210,7 @@ test("client selection prefers authenticated gh before token REST", async () => 
   });
 
   expect(selected.kind).toBe("gh");
+  expect(selected.cachePartition).toEqual({ kind: "gh" });
   expect(selected.warnings.length).toBe(0);
   expect(probeCalls).toBe(1);
 });
@@ -228,6 +229,12 @@ test("client selection uses GH_TOKEN REST when gh is unavailable", async () => {
   });
 
   expect(selected.kind).toBe("rest-token");
+  expect(selected.cachePartition.kind).toBe("rest-token");
+  if (selected.cachePartition.kind !== "rest-token") {
+    throw new Error("expected token cache partition");
+  }
+  expect(selected.cachePartition.credentialIdentity.startsWith("GH_TOKEN:sha256:")).toBe(true);
+  expect(JSON.stringify(selected.cachePartition).includes("primary")).toBe(false);
   await selected.client.listUserRepos("alice");
 });
 
@@ -245,6 +252,7 @@ test("client selection falls back to unauthenticated REST with warning", async (
   });
 
   expect(selected.kind).toBe("rest-public");
+  expect(selected.cachePartition).toEqual({ kind: "rest-public" });
   expect(selected.warnings.length).toBe(1);
   expect(selected.warnings[0].message).toContain("unauthenticated");
   await selected.client.listUserRepos("alice");

@@ -15,3 +15,11 @@ _Avoid_: argument parsing, CLI service
 **Scan candidate lifecycle**:
 Turning normalized GitHub inputs into raw dotfiles candidates by applying repository discovery traversal, one-hop contributor expansion, bot and cap policy, scoring, provenance merging, warning normalization, and rate-limit stop behavior.
 _Avoid_: scanner logic, repository search service
+
+**GitHub cache policy**:
+Deciding how GitHub API responses are cached across selected client modes, including cache key scope, auth-context partitioning, TTL/read-through behavior, and miss/stale semantics without owning filesystem storage, client selection, scan traversal, or CLI clear-cache behavior.
+_Avoid_: cache storage, GitHub client selection
+
+**GitHub test adapter**:
+A test-only GitHub client that satisfies the production GitHub client seam while providing deterministic fixture responses, call-order recording, and queued failure simulation for scanner and CLI tests.
+_Avoid_: GitHub fake, test mock

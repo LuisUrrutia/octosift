@@ -1,4 +1,5 @@
 import type { Contributor, RepoMetadata } from "../domain/types";
+import { isBotContributor } from "../rules/bots";
 
 interface GitHubRepoResponse {
   name: string;
@@ -46,10 +47,6 @@ export function mapGitHubContributor(contributor: GitHubContributorResponse): Co
     login: contributor.login,
     url: contributor.html_url,
     contributions: contributor.contributions,
-    isBot: isGitHubBotContributor(contributor.login, contributor.type),
+    isBot: isBotContributor(contributor),
   };
-}
-
-function isGitHubBotContributor(login: string, type?: string | null): boolean {
-  return type === "Bot" || login.toLowerCase().includes("[bot]");
 }

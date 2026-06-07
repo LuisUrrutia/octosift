@@ -66,6 +66,7 @@ test("maps GitHub contributor responses with response-level bot classification",
 
   expect(mapGitHubContributor({ login: "github-actions", html_url: "https://github.com/actions", contributions: 3, type: "Bot" }).isBot).toBe(true);
   expect(mapGitHubContributor({ login: "dependabot[bot]", html_url: "https://github.com/apps/dependabot", contributions: 4, type: "User" }).isBot).toBe(true);
+  expect(mapGitHubContributor({ login: "renovate", html_url: "https://github.com/renovate", contributions: 5, type: "User" }).isBot).toBe(true);
 });
 
 test("keeps response mapping dependency direction narrow", async () => {
@@ -73,6 +74,7 @@ test("keeps response mapping dependency direction narrow", async () => {
 
   expect(Object.keys(responseMapping).sort()).toEqual(["mapGitHubContributor", "mapGitHubRepo"]);
   expect(source.includes("../domain/types")).toBe(true);
+  expect(source.includes("../rules/bots")).toBe(true);
   expect(source.includes("./client")).toBe(false);
   expect(source.includes("./gh-adapter")).toBe(false);
   expect(source.includes("./rest-adapter")).toBe(false);

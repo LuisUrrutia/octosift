@@ -15,7 +15,11 @@ export interface RuntimeDependencies {
 export async function prepareRuntime(policy: RuntimePolicy, dependencies: RuntimeDependencies): Promise<SelectedGitHubClient> {
   const selectedClient = await dependencies.createDefaultGitHubClient();
   const client = policy.useCache
-    ? new CachedGitHubClient(selectedClient.client, { cache: dependencies.createFileCache(), ttlSeconds: policy.cacheTtlSeconds })
+    ? new CachedGitHubClient(selectedClient.client, {
+      cache: dependencies.createFileCache(),
+      cachePartition: selectedClient.cachePartition,
+      ttlSeconds: policy.cacheTtlSeconds,
+    })
     : selectedClient.client;
 
   return { ...selectedClient, client };
