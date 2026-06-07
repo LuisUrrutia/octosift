@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { formatOutput } from "../src/output/format";
 import { formatCsvCandidates } from "../src/output/csv";
 import { formatJsonCandidates } from "../src/output/json";
+import { projectOutputCandidate, serializeOutputCsvRow } from "../src/output/schema";
 import { DOTFILES_CANDIDATE_FIELDS, type DotfilesCandidate } from "../src/domain/types";
 
 const candidate: DotfilesCandidate = {
@@ -63,6 +64,31 @@ test("json formatter preserves approved field order", () => {
   );
 });
 
+test("output schema projects candidates through the approved field order", () => {
+  const projected = projectOutputCandidate(candidate);
+
+  expect(JSON.stringify(Object.keys(projected))).toBe(JSON.stringify([...DOTFILES_CANDIDATE_FIELDS]));
+  expect(projected.topics).toEqual(candidate.topics);
+  expect(projected.topics).not.toBe(candidate.topics);
+  expect(projected.sourceUser).toEqual(candidate.sourceUser);
+  expect(projected.sourceInput).toEqual(candidate.sourceInput);
+  expect(projected.matchedSignals).toEqual([
+    {
+      key: "topics",
+      label: "topic match",
+      score: 4,
+      evidence: "topics include dotfiles",
+    },
+    {
+      key: "stow",
+      label: "signal match",
+      score: 5,
+      evidence: "README mentions stow, zsh, and dotfiles",
+    },
+  ]);
+  expect(projected.matchedSignals).not.toBe(candidate.matchedSignals);
+});
+
 test("csv formatter preserves headers and escapes cells", () => {
   const output = formatCsvCandidates([candidate]);
   const expected = [
@@ -93,6 +119,45 @@ test("csv formatter preserves headers and escapes cells", () => {
   expect(output).toContain("dotfiles;zsh;stow");
   expect(output).toContain("alice;bob");
   expect(output).toContain("alice;https://github.com/alice");
+});
+
+test("output schema serializes csv rows through the approved field order", () => {
+  const sparseCandidate: DotfilesCandidate = {
+    ...candidate,
+    description: null,
+    topics: [],
+    language: null,
+    updatedAt: null,
+    pushedAt: null,
+    matchedSignals: [],
+    sourceUser: [],
+    sourceInput: [],
+  };
+
+  expect(formatCsvCandidates([candidate])).toBe(
+    [DOTFILES_CANDIDATE_FIELDS.join(","), serializeOutputCsvRow(candidate)].join("\n"),
+  );
+  expect(serializeOutputCsvRow(sparseCandidate)).toBe(
+    [
+      "https://github.com/alice/dotfiles",
+      "alice",
+      "dotfiles",
+      "alice/dotfiles",
+      "",
+      "",
+      "42",
+      "7",
+      "",
+      "false",
+      "false",
+      "",
+      "",
+      "",
+      "9",
+      "",
+      "",
+    ].join(","),
+  );
 });
 
 test("format dispatcher routes json and csv", () => {
