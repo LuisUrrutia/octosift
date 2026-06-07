@@ -13,7 +13,7 @@ import {
   type ScanWarning,
 } from "../src/domain/types";
 import { normalizeInputs, type NormalizeInputsOptions } from "../src/input/normalize";
-import { scanInputs } from "../src/scan/scanner";
+import { scanInputs } from "../src/scan/index";
 import { FakeGitHubClient, createFakeGitHubApiError } from "./fakes/fake-github-client";
 
 test("json default scans user input with real scanner and no live client", async () => {

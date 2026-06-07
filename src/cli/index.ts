@@ -4,7 +4,7 @@ import { type SelectedGitHubClient } from "../github/client";
 import { createDefaultGitHubClient } from "../github/select-client";
 import { normalizeInputs, type NormalizeInputsOptions, type NormalizeInputsResult } from "../input/normalize";
 import { formatOutput, type OutputFormat } from "../output/format";
-import { scanInputs, type ScanOptions } from "../scan/scanner";
+import { scanInputs, type ScanOptions } from "../scan/index";
 import { parseCommandIntent } from "./command-intent";
 import {
   formatClientConfigurationError,

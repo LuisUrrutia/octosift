@@ -4,7 +4,7 @@ import type { Contributor, DotfilesCandidate, NormalizedInput, RepoMetadata } fr
 import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS } from "../src/domain/types";
 import type { GitHubClient } from "../src/github/client";
 import { GitHubClientError } from "../src/github/client";
-import { scanInputs } from "../src/scan/scanner";
+import { scanInputs } from "../src/scan/index";
 import { FakeGitHubClient, createFakeGitHubApiError } from "./fakes/fake-github-client";
 import { cloneRepo, GITHUB_FIXTURE_REPOS } from "./fixtures/github";
 

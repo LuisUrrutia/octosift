@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import { FileCache } from "../src/cache/file-cache";
 import { runCli } from "../src/cli/index";
 import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS, type ScanResult, type ScanWarning } from "../src/domain/types";
-import { scanInputs } from "../src/scan/scanner";
+import { scanInputs } from "../src/scan/index";
 import { FakeGitHubClient, createFakeGitHubApiError } from "./fakes/fake-github-client";
 
 test("prints expanded help without selecting a GitHub client", async () => {

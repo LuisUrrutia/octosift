@@ -11,3 +11,7 @@ _Avoid_: GitHub response normalization, transport mapping
 **CLI command orchestration**:
 Turning command-line arguments into one script-safe command lifecycle: parse command intent, preserve short-circuit command modes, prepare runtime dependencies, run the scan, emit machine-readable output, route warnings and errors to stderr, and return the final exit code.
 _Avoid_: argument parsing, CLI service
+
+**Scan candidate lifecycle**:
+Turning normalized GitHub inputs into raw dotfiles candidates by applying repository discovery traversal, one-hop contributor expansion, bot and cap policy, scoring, provenance merging, warning normalization, and rate-limit stop behavior.
+_Avoid_: scanner logic, repository search service
