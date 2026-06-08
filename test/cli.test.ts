@@ -18,6 +18,7 @@ test("prints expanded help without selecting a GitHub client", async () => {
   });
 
   expect(exitCode).toBe(0);
+  expect(io.stdout.join("\n")).toContain("Usage: octosift");
   expect(io.stdout.join("\n")).toContain("--format <json|csv>");
   expect(io.stdout.join("\n")).toContain("@path");
   expect(io.stdout.join("\n")).toContain("--max-repos <n>");

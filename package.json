@@ -1,11 +1,14 @@
 {
-  "name": "dotfiles-finder",
+  "name": "octosift",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dotfiles-finder": "bun ./src/main.ts",
-    "qa": "bun run typecheck && bun test",
+    "octosift": "bun ./src/main.ts",
+    "start": "bun ./src/main.ts",
+    "dev": "bun --watch ./src/main.ts",
+    "check": "bun run typecheck && bun run test",
+    "qa": "bun run check",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit"
   }

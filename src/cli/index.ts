@@ -34,9 +34,9 @@ export interface CliDependencies {
 
 export function formatUsage(): string {
   return [
-    "Usage: dotfiles-finder [options] <user|owner/repo|github-url|@file> [...]",
+    "Usage: octosift [options] <user|owner/repo|github-url|@file> [...]",
     "",
-    "Find likely dotfiles repositories from GitHub users, repositories, URLs, or input files.",
+    "Find likely dotfiles and dev-environment repositories from GitHub users, repositories, URLs, or input files.",
     "",
     "Inputs:",
     "  LuisUrrutia                         GitHub username",

@@ -4,7 +4,7 @@ const bun = Bun as typeof Bun & { file(path: string): { text(): Promise<string> 
 const readme = await bun.file("README.md").text();
 
 const requiredTerms = [
-  "bun run dotfiles-finder -- LuisUrrutia",
+  "bun run octosift -- LuisUrrutia",
   "owner/repo",
   "https://github.com/LuisUrrutia",
   "--file inputs.txt",
@@ -85,4 +85,6 @@ test("README documents required usage, schema, scoring, auth, and v1 limits", ()
 
 test("README stays practical and avoids disallowed docs scope", () => {
   expect(readme.includes("CI workflow")).toBe(false);
+  expect(readme.includes("bun run dotfiles-finder --")).toBe(false);
+  expect(readme.includes("package script has not been renamed")).toBe(false);
 });
