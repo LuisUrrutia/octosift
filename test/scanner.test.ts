@@ -1,16 +1,17 @@
 import { expect, test } from "bun:test";
 
-import type { Contributor, DotfilesCandidate, NormalizedInput, RepoMetadata } from "../src/domain/types";
+import type { Contributor, NormalizedInput, RepoMetadata, SearchCandidate } from "../src/domain/types";
 import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS } from "../src/domain/types";
 import type { GitHubClient } from "../src/github/client";
 import { GitHubClientError } from "../src/github/client";
+import { createSearchIntentScorer } from "../src/rules/scoring";
 import { scanInputs } from "../src/scan/index";
 import { FakeGitHubClient, createFakeGitHubApiError } from "./fakes/fake-github-client";
 import { cloneRepo, GITHUB_FIXTURE_REPOS } from "./fixtures/github";
 
 test("scanner sequential call order applies maxRepos after user pagination order", async () => {
   const client = new FakeGitHubClient();
-  const result = await scanInputs([userInput("alice"), repoInput("bob", "config")], client, { maxRepos: 2 });
+  const result = await scanInputs([userInput("alice"), repoInput("bob", "config")], client, { scorer: createSearchIntentScorer("dotfiles"), maxRepos: 2 });
 
   expect(result.exitCode).toBe(EXIT_CODE_SUCCESS);
   expect(client.callOrder.join(",")).toBe(
@@ -27,7 +28,7 @@ test("scanner sequential call order applies maxRepos after user pagination order
 
 test("scanner expands repository contributors one hop and excludes bots", async () => {
   const client = new FakeGitHubClient();
-  const result = await scanInputs([repoInput("alice", "dotfiles")], client);
+  const result = await scanInputs([repoInput("alice", "dotfiles")], client, { scorer: createSearchIntentScorer("dotfiles") });
 
   expect(client.callOrder.join(",")).toBe("listRepoContributors:alice/dotfiles,listUserRepos:alice,listUserRepos:bob,listUserRepos:charlie");
   expect(client.callOrder.some((call) => call.includes("dependabot") || call.includes("renovate"))).toBe(false);
@@ -40,7 +41,7 @@ test("scanner expands repository contributors one hop and excludes bots", async 
 
 test("scanner excludes contributors matched by the shared bot policy", async () => {
   const client = new PatternBotContributorClient();
-  const result = await scanInputs([repoInput("org", "project")], client);
+  const result = await scanInputs([repoInput("org", "project")], client, { scorer: createSearchIntentScorer("dotfiles") });
 
   expect(result.exitCode).toBe(EXIT_CODE_SUCCESS);
   expect(client.callOrder).toEqual(["listRepoContributors:org/project", "listUserRepos:alice"]);
@@ -49,7 +50,7 @@ test("scanner excludes contributors matched by the shared bot policy", async () 
 
 test("scanner defaults maxContributors to 50 humans after bot filtering", async () => {
   const client = new ManyContributorsClient(55);
-  const result = await scanInputs([repoInput("org", "project")], client);
+  const result = await scanInputs([repoInput("org", "project")], client, { scorer: createSearchIntentScorer("dotfiles") });
 
   expect(result.exitCode).toBe(EXIT_CODE_SUCCESS);
   expect(client.callOrder.length).toBe(51);
@@ -61,7 +62,7 @@ test("scanner defaults maxContributors to 50 humans after bot filtering", async 
 
 test("scanner dedupes candidates and merges source arrays deterministically", async () => {
   const client = new FakeGitHubClient();
-  const result = await scanInputs([userInput("alice"), userInput("bob"), userInput("charlie")], client);
+  const result = await scanInputs([userInput("alice"), userInput("bob"), userInput("charlie")], client, { scorer: createSearchIntentScorer("dotfiles") });
   const shared = findCandidate(result.candidates, "shared/shared-dotfiles");
 
   expect(result.candidates.filter((candidate) => candidate.fullName === "shared/shared-dotfiles").length).toBe(1);
@@ -71,11 +72,62 @@ test("scanner dedupes candidates and merges source arrays deterministically", as
   expect(shared.matchedSignals.length > 0).toBe(true);
 });
 
+test("scanner emits scored dotfiles candidates after ledger provenance merge", async () => {
+  const client = new FakeGitHubClient();
+  const result = await scanInputs([userInput("alice")], client, { scorer: createSearchIntentScorer("dotfiles") });
+  const dotfiles = findCandidate(result.candidates, "alice/dotfiles");
+
+  expect(result.exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(dotfiles.score).toBe(18);
+  expect(dotfiles.matchedSignals.map((signal) => signal.key)).toEqual(["dotfiles", "zsh", "stow", "macos", "linux"]);
+  expect(dotfiles.sourceUser).toEqual(["alice"]);
+  expect(dotfiles.sourceInput).toEqual(["alice"]);
+});
+
+test("scanner emits scored skills candidates after ledger provenance merge", async () => {
+  const client = new MixedIntentClient();
+  const result = await scanInputs([userInput("alice")], client, { scorer: createSearchIntentScorer("skills") });
+
+  expect(result.exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(client.callOrder).toEqual(["listUserRepos:alice"]);
+  expect(result.candidates.map((candidate) => candidate.fullName)).toEqual(["alice/dotfiles", "alice/claude-skills"]);
+  expect(findCandidate(result.candidates, "alice/dotfiles").score).toBe(0);
+  expect(findCandidate(result.candidates, "alice/claude-skills").score).toBeGreaterThan(4);
+  expect(findCandidate(result.candidates, "alice/claude-skills").matchedSignals.map((signal) => signal.key)).toEqual([
+    "claude skills",
+    "ai agent workflows",
+    "agent skill",
+    "claude skill",
+  ]);
+});
+
+test("scanner duplicate discoveries merge provenance without replacing first-seen scoring snapshot", async () => {
+  const client = new FakeGitHubClient();
+  const result = await scanInputs([userInput("alice"), userInput("bob")], client, { scorer: createSearchIntentScorer("dotfiles") });
+  const shared = findCandidate(result.candidates, "shared/shared-dotfiles");
+
+  expect(shared.description).toBe("Shared dotfiles discovered through multiple users");
+  expect(shared.topics).toEqual(["dotfiles", "shared"]);
+  expect(shared.score).toBe(5);
+  expect(shared.matchedSignals.map((signal) => signal.key)).toEqual(["dotfiles"]);
+  expect(shared.sourceUser).toEqual(["alice", "bob"]);
+  expect(shared.sourceInput).toEqual(["alice", "bob"]);
+});
+
+test("scanner ignores empty repositories from GitHub metadata", async () => {
+  const client = new EmptyRepositoryClient();
+  const result = await scanInputs([userInput("alice")], client, { scorer: createSearchIntentScorer("dotfiles") });
+
+  expect(result.exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(client.callOrder).toEqual(["listUserRepos:alice"]);
+  expect(result.candidates.map((candidate) => candidate.fullName)).toEqual(["alice/dotfiles"]);
+});
+
 test("scanner partial failure warnings continue with usable candidates", async () => {
   const client = new FakeGitHubClient();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(403, "bob forbidden"));
 
-  const result = await scanInputs([userInput("alice"), userInput("bob"), userInput("charlie")], client);
+  const result = await scanInputs([userInput("alice"), userInput("bob"), userInput("charlie")], client, { scorer: createSearchIntentScorer("dotfiles") });
 
   expect(result.exitCode).toBe(EXIT_CODE_PARTIAL_FAILURE);
   expect(result.partialFailure).toBe(true);
@@ -92,7 +144,7 @@ test("scanner maps rate-limit warnings to exit code 3 and stops", async () => {
   const client = new FakeGitHubClient();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(429, "rate limited", 30));
 
-  const result = await scanInputs([userInput("alice"), userInput("bob"), userInput("charlie")], client);
+  const result = await scanInputs([userInput("alice"), userInput("bob"), userInput("charlie")], client, { scorer: createSearchIntentScorer("dotfiles") });
 
   expect(result.exitCode).toBe(EXIT_CODE_RATE_LIMIT_EXHAUSTED);
   expect(result.partialFailure).toBe(true);
@@ -104,7 +156,7 @@ test("scanner maps rate-limit warnings to exit code 3 and stops", async () => {
 
 test("scanner preserves structured GitHubClientError rate-limit context", async () => {
   const client = new StructuredFailureClient();
-  const result = await scanInputs([repoInput("org", "private")], client);
+  const result = await scanInputs([repoInput("org", "private")], client, { scorer: createSearchIntentScorer("dotfiles") });
 
   expect(result.exitCode).toBe(EXIT_CODE_RATE_LIMIT_EXHAUSTED);
   expect(JSON.stringify(result.warnings[0])).toBe(JSON.stringify({
@@ -134,7 +186,7 @@ function repoInput(owner: string, name: string): NormalizedInput {
   };
 }
 
-function findCandidate(candidates: readonly DotfilesCandidate[], fullName: string): DotfilesCandidate {
+function findCandidate(candidates: readonly SearchCandidate[], fullName: string): SearchCandidate {
   const candidate = candidates.find((item) => item.fullName === fullName);
 
   if (candidate === undefined) {
@@ -180,6 +232,58 @@ class PatternBotContributorClient implements GitHubClient {
   async listUserRepos(username: string): Promise<readonly RepoMetadata[]> {
     this.callOrder.push(`listUserRepos:${username}`);
     return [{ ...cloneRepo(GITHUB_FIXTURE_REPOS[0]), owner: username, fullName: `${username}/dotfiles`, url: `https://github.com/${username}/dotfiles` }];
+  }
+}
+
+class MixedIntentClient implements GitHubClient {
+  readonly callOrder: string[] = [];
+
+  async listRepoContributors(): Promise<readonly Contributor[]> {
+    return [];
+  }
+
+  async listUserRepos(username: string): Promise<readonly RepoMetadata[]> {
+    this.callOrder.push(`listUserRepos:${username}`);
+    return [
+      cloneRepo(GITHUB_FIXTURE_REPOS[0]),
+      {
+        ...cloneRepo(GITHUB_FIXTURE_REPOS[0]),
+        name: "claude-skills",
+        fullName: `${username}/claude-skills`,
+        url: `https://github.com/${username}/claude-skills`,
+        description: "Reusable Claude skills for AI agent workflows",
+        topics: ["agent-skill"],
+      },
+    ];
+  }
+}
+
+class EmptyRepositoryClient implements GitHubClient {
+  readonly callOrder: string[] = [];
+
+  async listRepoContributors(): Promise<readonly Contributor[]> {
+    return [];
+  }
+
+  async listUserRepos(username: string): Promise<readonly RepoMetadata[]> {
+    this.callOrder.push(`listUserRepos:${username}`);
+
+    return [
+      {
+        ...cloneRepo(GITHUB_FIXTURE_REPOS[0]),
+        name: "empty-dotfiles",
+        fullName: `${username}/empty-dotfiles`,
+        url: `https://github.com/${username}/empty-dotfiles`,
+        size: 0,
+      },
+      {
+        ...cloneRepo(GITHUB_FIXTURE_REPOS[0]),
+        owner: username,
+        fullName: `${username}/dotfiles`,
+        url: `https://github.com/${username}/dotfiles`,
+        size: 32,
+      },
+    ];
   }
 }
 

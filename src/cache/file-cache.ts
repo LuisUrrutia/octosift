@@ -18,7 +18,7 @@ export type CacheReadResult<T> =
   | { status: "miss" }
   | { status: "stale"; envelope: CacheEnvelope<T> };
 
-const DEFAULT_CACHE_DIR = "~/.local/share/dotfiles-finder";
+const DEFAULT_CACHE_DIR = "~/.local/share/octosift";
 
 export class FileCache {
   readonly baseDir: string;
@@ -93,7 +93,7 @@ export class FileCache {
 
 export function defaultCacheDir(): string {
   const home = process.env.HOME;
-  return home === undefined || home.length === 0 ? DEFAULT_CACHE_DIR : join(home, ".local", "share", "dotfiles-finder");
+  return home === undefined || home.length === 0 ? DEFAULT_CACHE_DIR : join(home, ".local", "share", "octosift");
 }
 
 export function safeCacheKey(key: string): string {

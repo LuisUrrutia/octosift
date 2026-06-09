@@ -8,11 +8,14 @@ declare const Bun: {
   argv: string[];
   file(path: string): { text(): Promise<string> };
   write(path: string, value: string): Promise<number>;
+  TOML: { parse(value: string): unknown };
   spawn(command: readonly string[], options: { env: Record<string, string>; stdout: "pipe"; stderr: "pipe" }): BunSubprocess;
 };
 
 declare const process: {
   env: Record<string, string | undefined>;
+  cwd(): string;
+  chdir(path: string): void;
 };
 
 declare module "bun:test" {
@@ -31,8 +34,13 @@ declare module "bun:test" {
 
 
 declare module "node:fs/promises" {
+  export interface Dirent {
+    name: string;
+    isFile(): boolean;
+  }
   export function mkdir(path: string, options?: { recursive?: boolean }): Promise<unknown>;
   export function mkdtemp(prefix: string): Promise<string>;
+  export function readdir(path: string, options: { withFileTypes: true }): Promise<Dirent[]>;
   export function rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>;
 }
 

@@ -1,6 +1,10 @@
-import { DOTFILES_CANDIDATE_FIELDS, type DotfilesCandidate, type MatchedSignal } from "../domain/types";
+import { DEFAULT_SEARCH_CANDIDATE_FIELDS, SEARCH_CANDIDATE_FIELDS, type SearchCandidate, type MatchedSignal } from "../domain/types";
 
-type OutputCandidateField = (typeof DOTFILES_CANDIDATE_FIELDS)[number];
+type OutputCandidateField = (typeof SEARCH_CANDIDATE_FIELDS)[number];
+
+export interface OutputOptions {
+  verbose?: boolean;
+}
 
 export interface OutputMatchedSignal extends Record<keyof MatchedSignal, string | number> {
   key: string;
@@ -9,7 +13,11 @@ export interface OutputMatchedSignal extends Record<keyof MatchedSignal, string 
   evidence: string;
 }
 
-export interface OutputCandidate extends Record<OutputCandidateField, unknown> {}
+export type OutputCandidate = Partial<Record<OutputCandidateField, unknown>>;
+
+function selectOutputFields(options: OutputOptions = {}): readonly OutputCandidateField[] {
+  return options.verbose === true ? SEARCH_CANDIDATE_FIELDS : DEFAULT_SEARCH_CANDIDATE_FIELDS;
+}
 
 function projectMatchedSignal(signal: MatchedSignal): OutputMatchedSignal {
   return {
@@ -20,7 +28,7 @@ function projectMatchedSignal(signal: MatchedSignal): OutputMatchedSignal {
   };
 }
 
-function projectOutputValue(field: OutputCandidateField, candidate: DotfilesCandidate): unknown {
+function projectOutputValue(field: OutputCandidateField, candidate: SearchCandidate): unknown {
   const value = candidate[field];
 
   if (field === "matchedSignals") {
@@ -34,18 +42,18 @@ function projectOutputValue(field: OutputCandidateField, candidate: DotfilesCand
   return value;
 }
 
-export function projectOutputCandidate(candidate: DotfilesCandidate): OutputCandidate {
-  const outputCandidate = {} as OutputCandidate;
+export function projectOutputCandidate(candidate: SearchCandidate, options: OutputOptions = {}): OutputCandidate {
+  const outputCandidate: OutputCandidate = {};
 
-  for (const field of DOTFILES_CANDIDATE_FIELDS) {
+  for (const field of selectOutputFields(options)) {
     outputCandidate[field] = projectOutputValue(field, candidate);
   }
 
   return outputCandidate;
 }
 
-export function projectOutputCandidates(candidates: readonly DotfilesCandidate[]): OutputCandidate[] {
-  return candidates.map(projectOutputCandidate);
+export function projectOutputCandidates(candidates: readonly SearchCandidate[], options: OutputOptions = {}): OutputCandidate[] {
+  return candidates.map((candidate) => projectOutputCandidate(candidate, options));
 }
 
 function serializeStringArray(values: readonly string[]): string {
@@ -60,13 +68,15 @@ function serializeMatchedSignals(signals: readonly MatchedSignal[]): string {
   return signals.map(serializeMatchedSignal).join(";");
 }
 
-function serializeCsvValue(field: OutputCandidateField, value: DotfilesCandidate[OutputCandidateField]): string {
-  if (value === null) {
-    return "";
+function serializeCsvValue(field: OutputCandidateField, candidate: SearchCandidate): string {
+  if (field === "matchedSignals") {
+    return serializeMatchedSignals(candidate.matchedSignals);
   }
 
-  if (field === "matchedSignals") {
-    return serializeMatchedSignals(value as readonly MatchedSignal[]);
+  const value = candidate[field];
+
+  if (value === null) {
+    return "";
   }
 
   if (Array.isArray(value)) {
@@ -84,10 +94,10 @@ function escapeCsvCell(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export function serializeOutputCsvRow(candidate: DotfilesCandidate): string {
-  return DOTFILES_CANDIDATE_FIELDS.map((field) => escapeCsvCell(serializeCsvValue(field, candidate[field]))).join(",");
+export function serializeOutputCsvRow(candidate: SearchCandidate, options: OutputOptions = {}): string {
+  return selectOutputFields(options).map((field) => escapeCsvCell(serializeCsvValue(field, candidate))).join(",");
 }
 
-export function serializeOutputCsvHeader(): string {
-  return DOTFILES_CANDIDATE_FIELDS.join(",");
+export function serializeOutputCsvHeader(options: OutputOptions = {}): string {
+  return selectOutputFields(options).join(",");
 }

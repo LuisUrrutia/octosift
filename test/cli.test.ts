@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 
 import { FileCache } from "../src/cache/file-cache";
 import { runCli } from "../src/cli/index";
-import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS, type ScanWarning } from "../src/domain/types";
+import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS, type ScanWarning, type SearchCandidate } from "../src/domain/types";
 import { createCliIo, createFakeCliDependencies, createTempCliCacheDir, emptyScanResult, runCliForTest } from "./cli-harness";
 import { FakeGitHubClient, createFakeGitHubApiError } from "./fakes/fake-github-client";
 
@@ -19,6 +19,7 @@ test("prints expanded help without selecting a GitHub client", async () => {
 
   expect(exitCode).toBe(0);
   expect(io.stdout.join("\n")).toContain("Usage: octosift");
+  expect(io.stdout.join("\n")).toContain("Usage: octosift <intent> [options]");
   expect(io.stdout.join("\n")).toContain("--format <json|csv>");
   expect(io.stdout.join("\n")).toContain("@path");
   expect(io.stdout.join("\n")).toContain("--max-repos <n>");
@@ -49,11 +50,11 @@ test("caches GitHub API responses by default across CLI runs", async () => {
   const cacheDir = await createTempCliCacheDir();
   const firstIo = createCliIo();
   const firstClient = new FakeGitHubClient();
-  const firstExit = await runCli(["alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
+  const firstExit = await runCli(["dotfiles", "alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
 
   const secondIo = createCliIo();
   const secondClient = new FakeGitHubClient();
-  const secondExit = await runCli(["alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
+  const secondExit = await runCli(["dotfiles", "alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
 
   expect(firstExit).toBe(EXIT_CODE_SUCCESS);
   expect(secondExit).toBe(EXIT_CODE_SUCCESS);
@@ -66,11 +67,11 @@ test("caches GitHub API responses separately by selected client mode", async () 
   const cacheDir = await createTempCliCacheDir();
   const publicIo = createCliIo();
   const publicClient = new FakeGitHubClient();
-  const publicExit = await runCli(["alice"], publicIo.writers, createFakeCliDependencies(publicClient, { kind: "rest-public", cacheDir }));
+  const publicExit = await runCli(["dotfiles", "alice"], publicIo.writers, createFakeCliDependencies(publicClient, { kind: "rest-public", cacheDir }));
 
   const tokenIo = createCliIo();
   const tokenClient = new FakeGitHubClient();
-  const tokenExit = await runCli(["alice"], tokenIo.writers, createFakeCliDependencies(tokenClient, { kind: "rest-token", cacheDir }));
+  const tokenExit = await runCli(["dotfiles", "alice"], tokenIo.writers, createFakeCliDependencies(tokenClient, { kind: "rest-token", cacheDir }));
 
   expect(publicExit).toBe(EXIT_CODE_SUCCESS);
   expect(tokenExit).toBe(EXIT_CODE_SUCCESS);
@@ -82,11 +83,11 @@ test("--no-cache bypasses the persistent GitHub API cache", async () => {
   const cacheDir = await createTempCliCacheDir();
   const firstIo = createCliIo();
   const firstClient = new FakeGitHubClient();
-  await runCli(["--no-cache", "alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
+  await runCli(["dotfiles", "--no-cache", "alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
 
   const secondIo = createCliIo();
   const secondClient = new FakeGitHubClient();
-  await runCli(["--no-cache", "alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
+  await runCli(["dotfiles", "--no-cache", "alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
 
   expect(firstClient.callOrder).toEqual(["listUserRepos:alice"]);
   expect(secondClient.callOrder).toEqual(["listUserRepos:alice"]);
@@ -96,11 +97,11 @@ test("--cache-ttl accepts zero and refreshes every run", async () => {
   const cacheDir = await createTempCliCacheDir();
   const firstIo = createCliIo();
   const firstClient = new FakeGitHubClient();
-  await runCli(["--cache-ttl", "0", "alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
+  await runCli(["dotfiles", "--cache-ttl", "0", "alice"], firstIo.writers, createFakeCliDependencies(firstClient, { cacheDir }));
 
   const secondIo = createCliIo();
   const secondClient = new FakeGitHubClient();
-  await runCli(["--cache-ttl", "0", "alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
+  await runCli(["dotfiles", "--cache-ttl", "0", "alice"], secondIo.writers, createFakeCliDependencies(secondClient, { cacheDir }));
 
   expect(firstClient.callOrder).toEqual(["listUserRepos:alice"]);
   expect(secondClient.callOrder).toEqual(["listUserRepos:alice"]);
@@ -108,7 +109,7 @@ test("--cache-ttl accepts zero and refreshes every run", async () => {
 
 test("rejects invalid --cache-ttl values", async () => {
   const io = createCliIo();
-  const exitCode = await runCli(["--cache-ttl", "1.5", "alice"], io.writers, createFakeCliDependencies(new FakeGitHubClient()));
+  const exitCode = await runCli(["dotfiles", "--cache-ttl", "1.5", "alice"], io.writers, createFakeCliDependencies(new FakeGitHubClient()));
 
   expect(exitCode).toBe(1);
   expect(io.stdout.join("\n")).toBe("");
@@ -154,7 +155,7 @@ test("prints version without selecting a GitHub client", async () => {
 });
 
 test("rejects exclusive commands mixed with scan inputs before selecting a GitHub client", async () => {
-  const result = await runCliForTest(["--help", "alice"], {
+  const result = await runCliForTest(["--help", "dotfiles", "alice"], {
     dependencies: {
       createDefaultGitHubClient: async () => {
         throw new Error("GitHub should not be touched after parse errors");
@@ -165,6 +166,19 @@ test("rejects exclusive commands mixed with scan inputs before selecting a GitHu
   expect(result.exitCode).toBe(1);
   expect(result.stdout.join("\n")).toBe("");
   expect(result.stderr.join("\n")).toContain("--help cannot be combined with scan inputs or flags");
+});
+
+test("rejects unknown intent before selecting a GitHub client", async () => {
+  const io = createCliIo();
+  const exitCode = await runCli(["alice"], io.writers, {
+    createDefaultGitHubClient: async () => {
+      throw new Error("GitHub should not be touched after empty scan inputs");
+    },
+  });
+
+  expect(exitCode).toBe(1);
+  expect(io.stdout.join("\n")).toBe("");
+  expect(io.stderr.join("\n")).toContain("Unknown search intent: alice");
 });
 
 test("rejects short aliases as unknown options", async () => {
@@ -183,7 +197,7 @@ test("rejects short aliases as unknown options", async () => {
 test("valid scan flags without inputs still reach input normalization", async () => {
   const io = createCliIo();
   const seenArgs: unknown[][] = [];
-  const exitCode = await runCli(["--format", "csv"], io.writers, {
+  const exitCode = await runCli(["dotfiles", "--format", "csv"], io.writers, {
     normalizeInputs: async (args) => {
       seenArgs.push([...args]);
       return { inputs: [], errors: [] };
@@ -202,37 +216,168 @@ test("valid scan flags without inputs still reach input normalization", async ()
 test("scans a user and writes JSON by default", async () => {
   const io = createCliIo();
   const client = new FakeGitHubClient();
-  const exitCode = await runCli(["alice"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "alice"], io.writers, createFakeCliDependencies(client));
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
   expect(io.stderr.join("\n")).toBe("");
-  const output = JSON.parse(io.stdout.join("\n")) as { fullName: string; score: number }[];
+  const output = JSON.parse(io.stdout.join("\n")) as Record<string, unknown>[];
   expect(output.map((candidate) => candidate.fullName).join(",")).toBe("alice/dotfiles,alice/terminal-setup,shared/shared-dotfiles");
-  expect(output.every((candidate) => candidate.score >= 3)).toBe(true);
+  expect(output.every((candidate) => Number(candidate.score) >= 3)).toBe(true);
+  expect(output.every((candidate) => !("owner" in candidate))).toBe(true);
+  expect(output.every((candidate) => !("name" in candidate))).toBe(true);
+  expect(output.every((candidate) => !("topics" in candidate))).toBe(true);
+  expect(output.every((candidate) => !("matchedSignals" in candidate))).toBe(true);
+  expect(output.every((candidate) => !("sourceUser" in candidate))).toBe(true);
+  expect(output.every((candidate) => !("sourceInput" in candidate))).toBe(true);
   expect(client.callOrder.join(",")).toBe("listUserRepos:alice");
+});
+
+test("--verbose includes JSON provenance and matched signals", async () => {
+  const io = createCliIo();
+  const client = new FakeGitHubClient();
+  const exitCode = await runCli(["dotfiles", "--verbose", "alice"], io.writers, createFakeCliDependencies(client));
+
+  expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+  const output = JSON.parse(io.stdout.join("\n")) as Record<string, unknown>[];
+  const dotfiles = output.find((candidate) => candidate.fullName === "alice/dotfiles");
+
+  if (dotfiles === undefined) {
+    throw new Error("missing alice/dotfiles candidate");
+  }
+
+  expect(Array.isArray(dotfiles.matchedSignals)).toBe(true);
+  expect(dotfiles.sourceUser).toEqual(["alice"]);
+  expect(dotfiles.sourceInput).toEqual(["alice"]);
 });
 
 test("routes CSV format and keeps warnings off stdout", async () => {
   const io = createCliIo();
   const client = new FakeGitHubClient();
-  const exitCode = await runCli(["--format", "csv", "alice"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "--format", "csv", "alice"], io.writers, createFakeCliDependencies(client));
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
-  expect(io.stdout[0].startsWith("url,owner,name,fullName,description,topics")).toBe(true);
+  expect(io.stdout[0].startsWith("url,fullName,description")).toBe(true);
+  expect(io.stdout[0].split("\n")[0]).toBe("url,fullName,description,stars,forks,language,isFork,isArchived,updatedAt,pushedAt,score");
   expect(io.stdout.join("\n")).toContain("https://github.com/alice/dotfiles");
   expect(io.stderr.join("\n")).toBe("");
 });
 
+test("--verbose includes CSV provenance and matched signal columns", async () => {
+  const io = createCliIo();
+  const client = new FakeGitHubClient();
+  const exitCode = await runCli(["dotfiles", "--format", "csv", "--verbose", "alice"], io.writers, createFakeCliDependencies(client));
+
+  expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(io.stdout[0].split("\n")[0]).toBe(
+    "url,owner,name,fullName,description,topics,stars,forks,language,isFork,isArchived,updatedAt,pushedAt,matchedSignals,score,sourceUser,sourceInput",
+  );
+  expect(io.stdout.join("\n")).toContain(",alice,alice");
+});
+
+test("sorts emitted candidates by score and recent push instead of recent update", async () => {
+  const io = createCliIo();
+  const client = new FakeGitHubClient();
+  const exitCode = await runCli(["dotfiles", "alice"], io.writers, {
+    ...createFakeCliDependencies(client),
+    scanInputs: async () => ({
+      candidates: [
+        candidateForCli("alice/newer-update-older-push", 10, "2026-06-01T10:00:00Z", { pushedAt: "2026-05-01T10:00:00Z" }),
+        candidateForCli("alice/high-score", 20, "2026-01-01T10:00:00Z", { pushedAt: "2026-01-01T10:00:00Z" }),
+        candidateForCli("alice/older-update-newer-push", 10, "2026-05-01T10:00:00Z", { pushedAt: "2026-06-01T10:00:00Z" }),
+      ],
+      warnings: [],
+      partialFailure: false,
+      exitCode: EXIT_CODE_SUCCESS,
+    }),
+  });
+
+  const output = JSON.parse(io.stdout.join("\n")) as Record<string, unknown>[];
+
+  expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(output.map((candidate) => candidate.fullName)).toEqual([
+    "alice/high-score",
+    "alice/older-update-newer-push",
+    "alice/newer-update-older-push",
+  ]);
+});
+
+test("sorts candidates with null or invalid pushedAt as oldest equal-score ties", async () => {
+  const io = createCliIo();
+  const client = new FakeGitHubClient();
+  const exitCode = await runCli(["dotfiles", "alice"], io.writers, {
+    ...createFakeCliDependencies(client),
+    scanInputs: async () => ({
+      candidates: [
+        candidateForCli("alice/null-push", 10, "2026-06-01T10:00:00Z", { pushedAt: null }),
+        candidateForCli("alice/valid-push", 10, "2026-01-01T10:00:00Z", { pushedAt: "2026-05-01T10:00:00Z" }),
+        candidateForCli("alice/invalid-push", 10, "2026-06-02T10:00:00Z", { pushedAt: "not-a-date" }),
+      ],
+      warnings: [],
+      partialFailure: false,
+      exitCode: EXIT_CODE_SUCCESS,
+    }),
+  });
+
+  const output = JSON.parse(io.stdout.join("\n")) as Record<string, unknown>[];
+
+  expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(output.map((candidate) => candidate.fullName)).toEqual(["alice/valid-push", "alice/null-push", "alice/invalid-push"]);
+});
+
+test("fork candidates are included by default", async () => {
+  const io = createCliIo();
+  const client = new FakeGitHubClient();
+  const exitCode = await runCli(["dotfiles", "alice"], io.writers, {
+    ...createFakeCliDependencies(client),
+    scanInputs: async () => ({
+      candidates: [
+        candidateForCli("alice/non-fork", 10, "2026-05-01T10:00:00Z"),
+        candidateForCli("alice/fork", 9, "2026-05-02T10:00:00Z", { isFork: true }),
+      ],
+      warnings: [],
+      partialFailure: false,
+      exitCode: EXIT_CODE_SUCCESS,
+    }),
+  });
+
+  const output = JSON.parse(io.stdout.join("\n")) as Record<string, unknown>[];
+
+  expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(output.map((candidate) => candidate.fullName)).toEqual(["alice/non-fork", "alice/fork"]);
+});
+
+test("--ignore-forks omits fork candidates from emitted output", async () => {
+  const io = createCliIo();
+  const client = new FakeGitHubClient();
+  const exitCode = await runCli(["dotfiles", "--ignore-forks", "alice"], io.writers, {
+    ...createFakeCliDependencies(client),
+    scanInputs: async () => ({
+      candidates: [
+        candidateForCli("alice/non-fork", 10, "2026-05-01T10:00:00Z"),
+        candidateForCli("alice/fork", 9, "2026-05-02T10:00:00Z", { isFork: true }),
+      ],
+      warnings: [],
+      partialFailure: false,
+      exitCode: EXIT_CODE_SUCCESS,
+    }),
+  });
+
+  const output = JSON.parse(io.stdout.join("\n")) as Record<string, unknown>[];
+
+  expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+  expect(output.map((candidate) => candidate.fullName)).toEqual(["alice/non-fork"]);
+});
+
 test("expands --file and @path before normalizing scan inputs", async () => {
   const io = createCliIo();
-  const tempDir = await mkdtemp(join(tmpdir(), "dotfiles-finder-cli-input-test-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "octosift-cli-input-test-"));
   const inputFile = join(tempDir, "inputs.txt");
   const moreFile = join(tempDir, "more.txt");
   await Bun.write(inputFile, ["# ignored", " alice ", "", "bob"].join("\n"));
   await Bun.write(moreFile, "https://github.com/charlie/workstation/issues\n");
   const seenValues: unknown[] = [];
 
-  const exitCode = await runCli(["--file", inputFile, `@${moreFile}`], io.writers, {
+  const exitCode = await runCli(["dotfiles", "--file", inputFile, `@${moreFile}`], io.writers, {
     normalizeInputs: async (values) => {
       seenValues.push(...values);
       return {
@@ -261,9 +406,9 @@ test("expands --file and @path before normalizing scan inputs", async () => {
 
 test("rejects invalid format and numeric flags with exit 1 and empty stdout", async () => {
   const invalidFormat = createCliIo();
-  const invalidFormatExit = await runCli(["--format", "xml", "alice"], invalidFormat.writers, createFakeCliDependencies(new FakeGitHubClient()));
+  const invalidFormatExit = await runCli(["dotfiles", "--format", "xml", "alice"], invalidFormat.writers, createFakeCliDependencies(new FakeGitHubClient()));
   const invalidNumber = createCliIo();
-  const invalidNumberExit = await runCli(["--max-repos", "0", "alice"], invalidNumber.writers, createFakeCliDependencies(new FakeGitHubClient()));
+  const invalidNumberExit = await runCli(["dotfiles", "--max-repos", "0", "alice"], invalidNumber.writers, createFakeCliDependencies(new FakeGitHubClient()));
 
   expect(invalidFormatExit).toBe(1);
   expect(invalidFormat.stdout.join("\n")).toBe("");
@@ -275,7 +420,7 @@ test("rejects invalid format and numeric flags with exit 1 and empty stdout", as
 
 test("normalizer errors exit 1 before selecting a GitHub client", async () => {
   const io = createCliIo();
-  const exitCode = await runCli(["bad/input/value"], io.writers, {
+  const exitCode = await runCli(["dotfiles", "bad/input/value"], io.writers, {
     normalizeInputs: async () => ({
       inputs: [],
       errors: [{ code: "invalid-input", input: "bad/input/value", message: "Invalid GitHub input: bad/input/value" }],
@@ -293,7 +438,7 @@ test("normalizer errors exit 1 before selecting a GitHub client", async () => {
 test("client selection warnings go to stderr while stdout stays valid JSON", async () => {
   const io = createCliIo();
   const warning: ScanWarning = { code: "partial-failure", message: "Using unauthenticated GitHub REST API; rate limits will be lower." };
-  const exitCode = await runCli(["alice"], io.writers, createFakeCliDependencies(new FakeGitHubClient(), { warnings: [warning] }));
+  const exitCode = await runCli(["dotfiles", "alice"], io.writers, createFakeCliDependencies(new FakeGitHubClient(), { warnings: [warning] }));
 
   expect(exitCode).toBe(0);
   expect(Array.isArray(JSON.parse(io.stdout.join("\n")))).toBe(true);
@@ -305,7 +450,7 @@ test("partial scanner warnings map to exit 2 with usable JSON", async () => {
   const client = new FakeGitHubClient();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(403, "bob forbidden"));
 
-  const exitCode = await runCli(["alice", "bob"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "alice", "bob"], io.writers, createFakeCliDependencies(client));
   const output = JSON.parse(io.stdout.join("\n")) as { fullName: string }[];
 
   expect(exitCode).toBe(EXIT_CODE_PARTIAL_FAILURE);
@@ -318,7 +463,7 @@ test("rate-limit scanner warnings map to exit 3 with valid partial JSON", async 
   const client = new FakeGitHubClient();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(429, "rate limited", 30));
 
-  const exitCode = await runCli(["alice", "bob", "charlie"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "alice", "bob", "charlie"], io.writers, createFakeCliDependencies(client));
   const output = JSON.parse(io.stdout.join("\n")) as { fullName: string }[];
 
   expect(exitCode).toBe(EXIT_CODE_RATE_LIMIT_EXHAUSTED);
@@ -327,3 +472,28 @@ test("rate-limit scanner warnings map to exit 3 with valid partial JSON", async 
   expect(io.stderr.join("\n")).toContain("rate-limit: rate limited");
   expect(io.stderr.join("\n")).toContain("retry-after=30s");
 });
+
+function candidateForCli(fullName: string, score: number, updatedAt: string | null, overrides: Partial<SearchCandidate> = {}): SearchCandidate {
+  const [owner = "alice", name = "repo"] = fullName.split("/");
+
+  return {
+    url: `https://github.com/${fullName}`,
+    owner,
+    name,
+    fullName,
+    description: null,
+    topics: [],
+    stars: 0,
+    forks: 0,
+    language: null,
+    isFork: false,
+    isArchived: false,
+    updatedAt,
+    pushedAt: updatedAt,
+    matchedSignals: [],
+    score,
+    sourceUser: [owner],
+    sourceInput: [owner],
+    ...overrides,
+  };
+}

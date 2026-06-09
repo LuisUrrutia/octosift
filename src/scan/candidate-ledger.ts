@@ -1,5 +1,4 @@
-import type { DotfilesCandidate, MatchedSignal, RepoMetadata } from "../domain/types";
-import { scoreRepoMetadata } from "../rules/scoring";
+import type { RepoMetadata } from "../domain/types";
 
 export interface CandidateRepoEvent {
   repo: RepoMetadata;
@@ -9,11 +8,18 @@ export interface CandidateRepoEvent {
 
 export interface CandidateLedger {
   recordRepo(event: CandidateRepoEvent): void;
-  toCandidates(): DotfilesCandidate[];
+  toCandidateRepos(): CandidateRepo[];
+}
+
+export interface CandidateRepo {
+  fullName: string;
+  repo: RepoMetadata;
+  sourceUser: readonly string[];
+  sourceInput: readonly string[];
 }
 
 export function createCandidateLedger(): CandidateLedger {
-  const candidates = new Map<string, DotfilesCandidate>();
+  const candidates = new Map<string, CandidateRepo>();
 
   return {
     recordRepo(event) {
@@ -28,35 +34,21 @@ export function createCandidateLedger(): CandidateLedger {
         return;
       }
 
-      candidates.set(event.repo.fullName, buildCandidate(event));
+      candidates.set(event.repo.fullName, buildCandidateRepo(event));
     },
 
-    toCandidates() {
-      return [...candidates.values()].map(cloneCandidate);
+    toCandidateRepos() {
+      return [...candidates.values()].map(cloneCandidateRepo);
     },
   };
 }
 
-function buildCandidate(event: CandidateRepoEvent): DotfilesCandidate {
+function buildCandidateRepo(event: CandidateRepoEvent): CandidateRepo {
   const repo = snapshotRepo(event.repo);
-  const score = scoreRepoMetadata(repo);
 
   return {
-    url: repo.url,
-    owner: repo.owner,
-    name: repo.name,
     fullName: repo.fullName,
-    description: repo.description,
-    topics: [...repo.topics],
-    stars: repo.stars,
-    forks: repo.forks,
-    language: repo.language,
-    isFork: repo.isFork,
-    isArchived: repo.isArchived,
-    updatedAt: repo.updatedAt,
-    pushedAt: repo.pushedAt,
-    matchedSignals: cloneMatchedSignals(score.matchedSignals),
-    score: score.score,
+    repo,
     sourceUser: [event.sourceUser],
     sourceInput: [event.sourceInput],
   };
@@ -72,6 +64,7 @@ function snapshotRepo(repo: RepoMetadata): RepoMetadata {
     topics: [...repo.topics],
     stars: repo.stars,
     forks: repo.forks,
+    size: repo.size,
     language: repo.language,
     isFork: repo.isFork,
     isArchived: repo.isArchived,
@@ -80,18 +73,13 @@ function snapshotRepo(repo: RepoMetadata): RepoMetadata {
   };
 }
 
-function cloneCandidate(candidate: DotfilesCandidate): DotfilesCandidate {
+function cloneCandidateRepo(candidate: CandidateRepo): CandidateRepo {
   return {
     ...candidate,
-    topics: [...candidate.topics],
-    matchedSignals: cloneMatchedSignals(candidate.matchedSignals),
+    repo: snapshotRepo(candidate.repo),
     sourceUser: [...candidate.sourceUser],
     sourceInput: [...candidate.sourceInput],
   };
-}
-
-function cloneMatchedSignals(signals: readonly MatchedSignal[]): MatchedSignal[] {
-  return signals.map((signal) => ({ ...signal }));
 }
 
 function appendUnique(values: readonly string[], value: string): readonly string[] {

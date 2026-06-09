@@ -1,23 +1,23 @@
 import { expect, test } from "bun:test";
 
 import {
-  DOTFILES_CANDIDATE_FIELDS,
+  SEARCH_CANDIDATE_FIELDS,
   EXIT_CODE_INVALID_INPUT,
   EXIT_CODE_PARTIAL_FAILURE,
   EXIT_CODE_RATE_LIMIT_EXHAUSTED,
   EXIT_CODE_SUCCESS,
-  type DotfilesCandidate,
+  type SearchCandidate,
 } from "../src/domain/types";
 
-type CandidateKeys = keyof DotfilesCandidate;
-type ExpectedCandidateKeys = (typeof DOTFILES_CANDIDATE_FIELDS)[number];
+type CandidateKeys = keyof SearchCandidate;
+type ExpectedCandidateKeys = (typeof SEARCH_CANDIDATE_FIELDS)[number];
 type AssertExactKeys = [CandidateKeys] extends [ExpectedCandidateKeys]
   ? ([ExpectedCandidateKeys] extends [CandidateKeys] ? true : never)
   : never;
 
 const keyCheck: AssertExactKeys = true;
 
-test("dotfiles candidate keys match the approved schema", () => {
+test("search candidate keys match the approved schema", () => {
   void keyCheck;
 
   const expectedKeys = [
@@ -40,7 +40,7 @@ test("dotfiles candidate keys match the approved schema", () => {
     "sourceInput",
   ];
 
-  expect(JSON.stringify(DOTFILES_CANDIDATE_FIELDS)).toBe(JSON.stringify(expectedKeys));
+  expect(JSON.stringify(SEARCH_CANDIDATE_FIELDS)).toBe(JSON.stringify(expectedKeys));
 });
 
 test("exit code constants match the approved values", () => {

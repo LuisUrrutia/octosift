@@ -1,10 +1,12 @@
 import { FileCache } from "../cache/file-cache";
-import { EXIT_CODE_INVALID_INPUT, type DotfilesCandidate, type ExitCode, type ScanResult } from "../domain/types";
+import { EXIT_CODE_INVALID_INPUT, type SearchCandidate, type ExitCode, type ScanResult } from "../domain/types";
 import { type SelectedGitHubClient } from "../github/client";
 import { createDefaultGitHubClient } from "../github/select-client";
 import { normalizeInputs, type NormalizeInputValue, type NormalizeInputsResult } from "../input/normalize";
 import { formatOutput, type OutputFormat } from "../output/format";
+import type { OutputOptions } from "../output/schema";
 import { scanInputs, type ScanOptions } from "../scan/index";
+import { loadSearchIntentCatalog, type SearchIntentCatalog } from "../rules/search-intent-catalog";
 import { parseCommandIntent } from "./command-intent";
 import { expandCliInputArgs, type ExpandCliInputArgsOptions, type ExpandCliInputArgsResult } from "./input-expansion";
 import {
@@ -15,6 +17,7 @@ import {
   writeOutput,
   writeWarnings,
 } from "./emission";
+import { selectFinalCandidates } from "./final-candidates";
 import { prepareRuntime } from "./runtime";
 
 export const VERSION = "0.0.0";
@@ -28,15 +31,21 @@ export interface CliDependencies {
   normalizeInputs(values: readonly NormalizeInputValue[]): Promise<NormalizeInputsResult>;
   createDefaultGitHubClient(): Promise<SelectedGitHubClient>;
   scanInputs(inputs: NormalizeInputsResult["inputs"], client: SelectedGitHubClient["client"], options: ScanOptions): Promise<ScanResult>;
-  formatOutput(candidates: readonly DotfilesCandidate[], format: OutputFormat): string;
+  formatOutput(candidates: readonly SearchCandidate[], format: OutputFormat, options?: OutputOptions): string;
   createFileCache(): FileCache;
+  loadSearchIntentCatalog(options?: { configDir?: string }): ReturnType<typeof loadSearchIntentCatalog>;
 }
 
 export function formatUsage(): string {
   return [
-    "Usage: octosift [options] <user|owner/repo|github-url|@file> [...]",
+    "Usage: octosift <intent> [options] <user|owner/repo|github-url|@file> [...]",
     "",
-    "Find likely dotfiles and dev-environment repositories from GitHub users, repositories, URLs, or input files.",
+    "Find candidate repositories for an explicit search intent from GitHub users, repositories, URLs, or input files.",
+    "",
+    "Search intents:",
+    "  dotfiles                            Find dotfiles and dev-environment repositories",
+    "  skills                              Find reusable AI-agent skill-pack repositories",
+    "  <custom>                            Load additional intents from ./config or --config-dir",
     "",
     "Inputs:",
     "  LuisUrrutia                         GitHub username",
@@ -51,8 +60,11 @@ export function formatUsage(): string {
     "  --min-score <number>       Minimum candidate score, 0 or greater (default: 3)",
     "  --max-contributors <n>     Maximum human contributors per repository, 1 or greater (default: 50)",
     "  --max-repos <n>            Maximum repositories scanned per user, 1 or greater (default: unlimited)",
+    "  --ignore-forks             Omit fork repositories from output",
+    "  --verbose                 Include matched signals and source provenance in output",
     "  --no-cache                 Disable persistent GitHub API response cache",
-    "  --cache-ttl <seconds>      Cache TTL in finite seconds, 0 or greater (default: 21600)",
+    "  --cache-ttl <seconds>      Cache TTL in finite seconds, 0 or greater (default: 259200)",
+    "  --config-dir <dir>         Load TOML search intent definitions from a config directory",
     "  --clear-cache              Clear persistent cache and exit",
     "  --help                     Show this help text",
     "  --version                  Show version",
@@ -84,6 +96,17 @@ export async function runCli(args: string[], writers: Partial<CliWriters> = {}, 
       await resolvedDependencies.createFileCache().clear();
       return 0;
     case "scan": {
+      const catalog = await loadCatalog(resolvedWriters, resolvedDependencies, intent.configDir);
+      if (catalog === undefined) {
+        return EXIT_CODE_INVALID_INPUT;
+      }
+
+      const scorer = catalog.resolve(intent.searchIntent);
+      if (scorer === undefined) {
+        writeErrors(resolvedWriters, [`Unknown search intent: ${intent.searchIntent}. Available intents: ${catalog.intentNames.join(", ")}`]);
+        return EXIT_CODE_INVALID_INPUT;
+      }
+
       const expanded = await resolvedDependencies.expandInputArgs(intent.inputArgs);
       const normalized = await resolvedDependencies.normalizeInputs(expanded.values);
       const inputErrors = [...expanded.errors, ...normalized.errors];
@@ -99,12 +122,13 @@ export async function runCli(args: string[], writers: Partial<CliWriters> = {}, 
       }
 
       const result = await resolvedDependencies.scanInputs(normalized.inputs, runtime.client, {
+        scorer,
         maxContributors: intent.maxContributors,
         maxRepos: intent.maxRepos,
       });
-      const candidates = result.candidates.filter((candidate) => candidate.score >= intent.minScore);
+      const candidates = selectFinalCandidates(result.candidates, { minScore: intent.minScore, ignoreForks: intent.ignoreForks });
 
-      writeOutput(resolvedWriters, resolvedDependencies.formatOutput(candidates, intent.format));
+      writeOutput(resolvedWriters, resolvedDependencies.formatOutput(candidates, intent.format, { verbose: intent.verbose }));
       writeWarnings(resolvedWriters, result.warnings);
 
       return result.exitCode;
@@ -127,8 +151,22 @@ function resolveDependencies(dependencies: Partial<CliDependencies>): CliDepende
     scanInputs,
     formatOutput,
     createFileCache: () => new FileCache(),
+    loadSearchIntentCatalog,
     ...dependencies,
   };
+}
+
+async function loadCatalog(
+  writers: CliWriters,
+  dependencies: CliDependencies,
+  configDir: string | undefined,
+): Promise<SearchIntentCatalog | undefined> {
+  try {
+    return await dependencies.loadSearchIntentCatalog({ configDir });
+  } catch (error) {
+    writeErrors(writers, [error instanceof Error ? error.message : String(error)]);
+    return undefined;
+  }
 }
 
 async function configureRuntime(

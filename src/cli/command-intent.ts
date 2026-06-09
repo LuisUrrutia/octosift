@@ -1,12 +1,14 @@
 import type { OutputFormat } from "../output/format";
+import type { SearchIntent } from "../domain/types";
 
 const DEFAULT_FORMAT: OutputFormat = "json";
 const DEFAULT_MIN_SCORE = 3;
 const DEFAULT_MAX_CONTRIBUTORS = 50;
-const DEFAULT_CACHE_TTL_SECONDS = 21600;
+const DEFAULT_CACHE_TTL_SECONDS = 72 * 60 * 60;
 
 type ExclusiveFlag = "--help" | "--version" | "--clear-cache";
-type ScalarValueFlag = "--format" | "--min-score" | "--max-contributors" | "--max-repos" | "--cache-ttl";
+type PresenceFlag = "--no-cache" | "--verbose" | "--ignore-forks";
+type ScalarValueFlag = "--format" | "--min-score" | "--max-contributors" | "--max-repos" | "--cache-ttl" | "--config-dir";
 type ValueFlag = ScalarValueFlag | "--file";
 
 export type CommandIntent =
@@ -15,6 +17,7 @@ export type CommandIntent =
   | { kind: "clear-cache" }
   | {
     kind: "scan";
+    searchIntent: SearchIntent;
     inputArgs: string[];
     format: OutputFormat;
     minScore: number;
@@ -22,6 +25,9 @@ export type CommandIntent =
     maxRepos: number | undefined;
     useCache: boolean;
     cacheTtlSeconds: number;
+    verbose: boolean;
+    ignoreForks: boolean;
+    configDir: string | undefined;
   };
 
 export type ParseCommandIntentResult = { intent: CommandIntent } | { errors: string[] };
@@ -44,6 +50,10 @@ export function parseCommandIntent(args: readonly string[]): ParseCommandIntentR
   let maxRepos: number | undefined;
   let useCache = true;
   let cacheTtlSeconds = DEFAULT_CACHE_TTL_SECONDS;
+  let verbose = false;
+  let ignoreForks = false;
+  let searchIntent: SearchIntent | undefined;
+  let configDir: string | undefined;
 
   const markScanToken = () => {
     scanTokenSeen = true;
@@ -89,13 +99,21 @@ export function parseCommandIntent(args: readonly string[]): ParseCommandIntentR
       continue;
     }
 
-    if (parsed !== undefined && parsed.flag === "--no-cache") {
+    if (parsed !== undefined && isPresenceFlag(parsed.flag)) {
       if (parsed.hasEquals) {
-        errors.push("--no-cache does not take a value.");
+        errors.push(`${parsed.flag} does not take a value.`);
         continue;
       }
       markScanToken();
-      useCache = false;
+      if (parsed.flag === "--no-cache") {
+        useCache = false;
+      }
+      if (parsed.flag === "--verbose") {
+        verbose = true;
+      }
+      if (parsed.flag === "--ignore-forks") {
+        ignoreForks = true;
+      }
       continue;
     }
 
@@ -159,6 +177,12 @@ export function parseCommandIntent(args: readonly string[]): ParseCommandIntentR
           }
           break;
         }
+        case "--config-dir": {
+          if (firstOccurrence) {
+            configDir = valueResult;
+          }
+          break;
+        }
       }
       continue;
     }
@@ -169,6 +193,11 @@ export function parseCommandIntent(args: readonly string[]): ParseCommandIntentR
     }
 
     markScanToken();
+    if (searchIntent === undefined && inputArgs.length === 0) {
+      searchIntent = rawArg;
+      continue;
+    }
+
     inputArgs.push(rawArg);
   }
 
@@ -180,7 +209,11 @@ export function parseCommandIntent(args: readonly string[]): ParseCommandIntentR
     return { intent: exclusiveIntentFor(exclusiveFlag) };
   }
 
-  return { intent: { kind: "scan", inputArgs, format, minScore, maxContributors, maxRepos, useCache, cacheTtlSeconds } };
+  if (searchIntent === undefined) {
+    return { errors: ["Search intent is required."] };
+  }
+
+  return { intent: { kind: "scan", searchIntent, inputArgs, format, minScore, maxContributors, maxRepos, useCache, cacheTtlSeconds, verbose, ignoreForks, configDir } };
 }
 
 function parseFlagToken(arg: string): { flag: string; value: string | undefined; hasEquals: boolean } | undefined {
@@ -200,13 +233,18 @@ function isExclusiveFlag(flag: string): flag is ExclusiveFlag {
   return flag === "--help" || flag === "--version" || flag === "--clear-cache";
 }
 
+function isPresenceFlag(flag: string): flag is PresenceFlag {
+  return flag === "--no-cache" || flag === "--verbose" || flag === "--ignore-forks";
+}
+
 function isValueFlag(flag: string): flag is ValueFlag {
   return flag === "--format"
     || flag === "--file"
     || flag === "--min-score"
     || flag === "--max-contributors"
     || flag === "--max-repos"
-    || flag === "--cache-ttl";
+    || flag === "--cache-ttl"
+    || flag === "--config-dir";
 }
 
 function readValue(

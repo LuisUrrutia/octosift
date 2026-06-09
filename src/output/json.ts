@@ -1,6 +1,6 @@
-import type { DotfilesCandidate } from "../domain/types";
-import { projectOutputCandidates } from "./schema";
+import type { SearchCandidate } from "../domain/types";
+import { projectOutputCandidates, type OutputOptions } from "./schema";
 
-export function formatJsonCandidates(candidates: readonly DotfilesCandidate[]): string {
-  return JSON.stringify(projectOutputCandidates(candidates));
+export function formatJsonCandidates(candidates: readonly SearchCandidate[], options: OutputOptions = {}): string {
+  return JSON.stringify(projectOutputCandidates(candidates, options));
 }

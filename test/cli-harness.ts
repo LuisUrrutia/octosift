@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { FileCache } from "../src/cache/file-cache";
 import { runCli, type CliDependencies, type CliWriters } from "../src/cli/index";
 import { expandCliInputArgs, type ExpandCliInputArgsOptions } from "../src/cli/input-expansion";
-import type { DotfilesCandidate, ExitCode, ScanResult, ScanWarning } from "../src/domain/types";
+import type { ExitCode, ScanResult, ScanWarning, SearchCandidate } from "../src/domain/types";
 import type { GitHubCachePartition, GitHubClientKind } from "../src/github/client";
 import { normalizeInputs } from "../src/input/normalize";
 import { scanInputs } from "../src/scan/index";
@@ -82,12 +82,12 @@ export function createFakeCliDependencies(client: FakeGitHubClient, options: Fak
   };
 }
 
-export function createTempCliCacheDir(prefix = "dotfiles-finder-cli-cache-test-"): string {
+export function createTempCliCacheDir(prefix = "octosift-cli-cache-test-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-export function parseJsonOutput(stdout: readonly string[]): DotfilesCandidate[] {
-  return JSON.parse(stdout.join("\n")) as DotfilesCandidate[];
+export function parseJsonOutput(stdout: readonly string[]): SearchCandidate[] {
+  return JSON.parse(stdout.join("\n")) as SearchCandidate[];
 }
 
 export function fileReader(files: ReadonlyMap<string, string>): (path: string) => string {

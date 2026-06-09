@@ -14,7 +14,7 @@ test("json default scans user input with real scanner and no live client", async
   const client = new FakeGitHubClient();
   const io = createCliIo();
 
-  const exitCode = await runCli(["alice"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "alice"], io.writers, createFakeCliDependencies(client));
   const output = parseJsonOutput(io.stdout);
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
@@ -28,7 +28,7 @@ test("repo input expands contributors one hop and excludes bots", async () => {
   const client = new FakeGitHubClient();
   const io = createCliIo();
 
-  const exitCode = await runCli(["alice/dotfiles"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "--verbose", "alice/dotfiles"], io.writers, createFakeCliDependencies(client));
   const output = parseJsonOutput(io.stdout);
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
@@ -60,7 +60,7 @@ test("mixed file input uses real normalizer and merges duplicate JSON sources", 
   ]);
 
   const exitCode = await runCli(
-    ["--file", "inputs.txt", "@more-inputs.txt", "bob"],
+    ["dotfiles", "--verbose", "--file", "inputs.txt", "@more-inputs.txt", "bob"],
     io.writers,
     createFakeCliDependencies(client, { expandInputOptions: { readFile: fileReader(files) } }),
   );
@@ -83,13 +83,13 @@ test("csv output remains machine-readable and keeps warnings on stderr", async (
   const io = createCliIo();
   const warnings: ScanWarning[] = [{ code: "partial-failure", message: "Using fake client warning." }];
 
-  const exitCode = await runCli(["--format", "csv", "alice"], io.writers, createFakeCliDependencies(client, { warnings }));
+  const exitCode = await runCli(["dotfiles", "--format", "csv", "alice"], io.writers, createFakeCliDependencies(client, { warnings }));
   const stdout = io.stdout.join("\n");
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
-  expect(stdout.startsWith("url,owner,name,fullName,description,topics,stars,forks,language,isFork,isArchived,updatedAt,pushedAt,matchedSignals,score,sourceUser,sourceInput\n")).toBe(true);
-  expect(stdout).toContain("https://github.com/alice/dotfiles,alice,dotfiles,alice/dotfiles");
-  expect(stdout).toContain("dotfiles;stow;zsh");
+  expect(stdout.startsWith("url,fullName,description,stars,forks,language,isFork,isArchived,updatedAt,pushedAt,score\n")).toBe(true);
+  expect(stdout).toContain("https://github.com/alice/dotfiles,alice/dotfiles");
+  expect(stdout.includes("dotfiles;stow;zsh")).toBe(false);
   expect(io.stderr.join("\n")).toContain("Using fake client warning.");
   expect(JSON.stringify(client.callOrder)).toBe(JSON.stringify(["listUserRepos:alice"]));
 });
@@ -98,7 +98,7 @@ test("max contributor cap limits repo expansion through sequential call order", 
   const client = new FakeGitHubClient();
   const io = createCliIo();
 
-  const exitCode = await runCli(["--max-contributors", "2", "alice/dotfiles"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "--max-contributors", "2", "alice/dotfiles"], io.writers, createFakeCliDependencies(client));
   const output = parseJsonOutput(io.stdout);
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
@@ -114,7 +114,7 @@ test("max repo cap limits emitted candidates without batching", async () => {
   const client = new FakeGitHubClient();
   const io = createCliIo();
 
-  const exitCode = await runCli(["--min-score", "0", "--max-repos", "1", "alice", "bob"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "--min-score", "0", "--max-repos", "1", "alice", "bob"], io.writers, createFakeCliDependencies(client));
   const output = parseJsonOutput(io.stdout);
 
   expect(exitCode).toBe(EXIT_CODE_SUCCESS);
@@ -127,7 +127,7 @@ test("partial failure exits 2 with usable json and stderr warning", async () => 
   const io = createCliIo();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(403, "bob forbidden"));
 
-  const exitCode = await runCli(["alice", "bob", "charlie"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "alice", "bob", "charlie"], io.writers, createFakeCliDependencies(client));
   const output = parseJsonOutput(io.stdout);
 
   expect(exitCode).toBe(EXIT_CODE_PARTIAL_FAILURE);
@@ -141,7 +141,7 @@ test("rate limit failure exits 3, stops later inputs, and emits valid empty json
   const io = createCliIo();
   client.queueFailure("listUserRepos", "bob", createFakeGitHubApiError(429, "rate limited", 30));
 
-  const exitCode = await runCli(["bob", "alice"], io.writers, createFakeCliDependencies(client));
+  const exitCode = await runCli(["dotfiles", "bob", "alice"], io.writers, createFakeCliDependencies(client));
   const output = parseJsonOutput(io.stdout);
 
   expect(exitCode).toBe(EXIT_CODE_RATE_LIMIT_EXHAUSTED);
