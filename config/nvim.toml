@@ -1,0 +1,49 @@
+[[intent]]
+name = "nvim"
+normalization = "lowercase-separators"
+
+[[intent.exact_name]]
+name = "nvim-config"
+score = 20
+label = "exact Neovim config repository name"
+
+[[intent.exact_name]]
+name = "neovim-config"
+score = 20
+label = "exact Neovim config repository name"
+
+[[intent.exact_name]]
+name = "vim-config"
+score = 20
+label = "exact Vim config repository name"
+
+[[intent.exact_name]]
+name = "vimrc"
+score = 20
+label = "exact Vim config repository name"
+
+[[intent.exact_name]]
+name = ".vimrc"
+score = 20
+label = "exact Vim config repository name"
+
+[[intent.exact_name]]
+name = "neovimrc"
+score = 20
+label = "exact Neovim config repository name"
+
+[[intent.term_group]]
+label = "strong Neovim config metadata signal"
+score = 8
+terms = ["nvim config", "neovim config", "vim config", "lua config", "lsp config", "treesitter config", "lazyvim", "kickstart nvim", "astronvim", "nvchad"]
+fields = ["name", "description", "topics"]
+
+[[intent.term_group]]
+label = "medium Vim configuration metadata signal"
+score = 3
+terms = ["editor config", "personal vim", "personal neovim", "my vim", "my neovim"]
+fields = ["name", "description", "topics"]
+
+[intent.penalties]
+fork = -1
+archived = -2

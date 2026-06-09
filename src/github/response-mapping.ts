@@ -9,6 +9,7 @@ interface GitHubRepoResponse {
   topics?: unknown;
   stargazers_count: number;
   forks_count: number;
+  size: number;
   language?: string | null;
   fork: boolean;
   archived: boolean;
@@ -34,6 +35,7 @@ export function mapGitHubRepo(repo: GitHubRepoResponse): RepoMetadata {
     topics: Array.isArray(repo.topics) ? repo.topics : [],
     stars: repo.stargazers_count,
     forks: repo.forks_count,
+    size: repo.size,
     language: repo.language ?? null,
     isFork: repo.fork,
     isArchived: repo.archived,

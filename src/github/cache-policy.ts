@@ -7,8 +7,10 @@ export interface GitHubCachePolicyOptions {
   ttlSeconds?: number;
 }
 
-const DEFAULT_TTL_SECONDS = 6 * 60 * 60;
+const DEFAULT_TTL_SECONDS = 72 * 60 * 60;
 const DEFAULT_CACHE_PARTITION: GitHubCachePartition = { kind: "rest-public" };
+const USER_REPOS_PAYLOAD_SHAPE = "repository-list-v1";
+const REPO_CONTRIBUTORS_PAYLOAD_SHAPE = "contributor-list-v1";
 
 export class GitHubCachePolicy {
   private readonly cache: FileCache;
@@ -47,15 +49,15 @@ export function defaultCacheTtlSeconds(): number {
 }
 
 export function userReposCacheKey(username: string, options: GitHubListOptions = {}, cachePartition: GitHubCachePartition = DEFAULT_CACHE_PARTITION): string {
-  return stableCacheKey("user-repos", cachePartition, username, options);
+  return stableCacheKey("user-repos", USER_REPOS_PAYLOAD_SHAPE, cachePartition, username, options);
 }
 
 export function repoContributorsCacheKey(owner: string, repo: string, options: GitHubListOptions = {}, cachePartition: GitHubCachePartition = DEFAULT_CACHE_PARTITION): string {
-  return stableCacheKey("repo-contributors", cachePartition, `${owner}/${repo}`, options);
+  return stableCacheKey("repo-contributors", REPO_CONTRIBUTORS_PAYLOAD_SHAPE, cachePartition, `${owner}/${repo}`, options);
 }
 
-function stableCacheKey(namespace: string, cachePartition: GitHubCachePartition, target: string, options: GitHubListOptions): string {
-  return `${namespace}:${cachePartitionKey(cachePartition)}:${target}:${listOptionsKey(options)}`;
+function stableCacheKey(namespace: string, payloadShape: string, cachePartition: GitHubCachePartition, target: string, options: GitHubListOptions): string {
+  return `${namespace}:${payloadShape}:${cachePartitionKey(cachePartition)}:${target}:${listOptionsKey(options)}`;
 }
 
 function normalizeListOptions(options: GitHubListOptions): GitHubListOptions {

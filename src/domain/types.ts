@@ -1,5 +1,7 @@
 export type InputKind = "user" | "repository" | "url" | "file";
 
+export type SearchIntent = string;
+
 export interface UserRef {
   kind: "user";
   login: string;
@@ -37,6 +39,7 @@ export interface RepoMetadata {
   topics: readonly string[];
   stars: number;
   forks: number;
+  size: number;
   language: string | null;
   isFork: boolean;
   isArchived: boolean;
@@ -58,7 +61,7 @@ export interface MatchedSignal {
   evidence: string;
 }
 
-export interface DotfilesCandidate {
+export interface SearchCandidate {
   url: string;
   owner: string;
   name: string;
@@ -94,7 +97,7 @@ export interface RateLimitInfo {
 }
 
 export interface ScanResult {
-  candidates: readonly DotfilesCandidate[];
+  candidates: readonly SearchCandidate[];
   warnings: readonly ScanWarning[];
   rateLimit?: RateLimitInfo;
   partialFailure: boolean;
@@ -108,7 +111,7 @@ export const EXIT_CODE_INVALID_INPUT = 1 as const;
 export const EXIT_CODE_PARTIAL_FAILURE = 2 as const;
 export const EXIT_CODE_RATE_LIMIT_EXHAUSTED = 3 as const;
 
-export const DOTFILES_CANDIDATE_FIELDS = [
+export const SEARCH_CANDIDATE_FIELDS = [
   "url",
   "owner",
   "name",
@@ -126,4 +129,18 @@ export const DOTFILES_CANDIDATE_FIELDS = [
   "score",
   "sourceUser",
   "sourceInput",
-] as const satisfies readonly (keyof DotfilesCandidate)[];
+] as const satisfies readonly (keyof SearchCandidate)[];
+
+export const DEFAULT_SEARCH_CANDIDATE_FIELDS = [
+  "url",
+  "fullName",
+  "description",
+  "stars",
+  "forks",
+  "language",
+  "isFork",
+  "isArchived",
+  "updatedAt",
+  "pushedAt",
+  "score",
+] as const satisfies readonly (typeof SEARCH_CANDIDATE_FIELDS)[number][];

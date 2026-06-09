@@ -1,11 +1,12 @@
-import type { DotfilesCandidate } from "../domain/types";
+import type { SearchCandidate } from "../domain/types";
 import { formatCsvCandidates } from "./csv";
 import { formatJsonCandidates } from "./json";
+import type { OutputOptions } from "./schema";
 
 export type OutputFormat = "json" | "csv";
 
 export interface OutputFormatter {
-  format(candidates: readonly DotfilesCandidate[]): string;
+  format(candidates: readonly SearchCandidate[], options?: OutputOptions): string;
 }
 
 const OUTPUT_FORMATTERS: Record<OutputFormat, OutputFormatter> = {
@@ -17,6 +18,6 @@ const OUTPUT_FORMATTERS: Record<OutputFormat, OutputFormatter> = {
   },
 };
 
-export function formatOutput(candidates: readonly DotfilesCandidate[], format: OutputFormat): string {
-  return OUTPUT_FORMATTERS[format].format(candidates);
+export function formatOutput(candidates: readonly SearchCandidate[], format: OutputFormat, options: OutputOptions = {}): string {
+  return OUTPUT_FORMATTERS[format].format(candidates, options);
 }

@@ -35,6 +35,29 @@ test("cache keys separate user repositories from repository contributors and sta
   expect(safeCacheKey(contributorsKey)).toMatch(/^[a-f0-9]+$/);
 });
 
+test("user repository cache keys include repository-list payload-shape identity", () => {
+  const key = userReposCacheKey("alice", { perPage: 100 });
+
+  expect(key).toContain("repository-list-v1");
+});
+
+test("repository contributor cache keys include contributor-list payload-shape identity", () => {
+  const key = repoContributorsCacheKey("owner", "repo", { perPage: 100 });
+
+  expect(key).toContain("contributor-list-v1");
+});
+
+test("GitHub cache payload families use distinct version identity for similar targets and options", () => {
+  const userKey = userReposCacheKey("owner/repo", { perPage: 100 });
+  const contributorsKey = repoContributorsCacheKey("owner", "repo", { perPage: 100 });
+
+  expect(userKey).toContain("user-repos:repository-list-v1:");
+  expect(contributorsKey).toContain("repo-contributors:contributor-list-v1:");
+  expect(userKey.includes("contributor-list-v1")).toBe(false);
+  expect(contributorsKey.includes("repository-list-v1")).toBe(false);
+  expect(userKey).not.toBe(contributorsKey);
+});
+
 test("cache keys include selected GitHub client mode and credential identity without raw tokens", () => {
   const publicPartition: GitHubCachePartition = { kind: "rest-public" };
   const firstTokenPartition: GitHubCachePartition = { kind: "rest-token", credentialIdentity: "GH_TOKEN:sha256:first-fingerprint" };
@@ -120,6 +143,7 @@ test("CachedGitHubClient writes GitHub responses with the default cache TTL", as
   if (cached.status !== "hit") {
     throw new Error("expected fresh cached GitHub response");
   }
+  expect(defaultCacheTtlSeconds()).toBe(259200);
   expect(cached.envelope.ttlSeconds).toBe(defaultCacheTtlSeconds());
 });
 
@@ -144,5 +168,5 @@ test("CachedGitHubClient refreshes stale contributor cache entries and overwrite
 });
 
 async function tempCacheDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "dotfiles-finder-cache-test-"));
+  return mkdtemp(join(tmpdir(), "octosift-cache-test-"));
 }

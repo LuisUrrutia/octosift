@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import type { DotfilesCandidate } from "../src/domain/types";
+import type { SearchCandidate } from "../src/domain/types";
 import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS } from "../src/domain/types";
 import { GitHubClientError } from "../src/github/client";
 import { createScanOutcomePolicy } from "../src/scan/scan-outcome-policy";
@@ -97,7 +97,7 @@ test("scan outcome policy export surface and dependencies stay narrow", async ()
   expect(source.includes("./candidate-ledger")).toBe(false);
 });
 
-function candidate(fullName: string): DotfilesCandidate {
+function candidate(fullName: string): SearchCandidate {
   const [owner, name] = fullName.split("/");
 
   return {

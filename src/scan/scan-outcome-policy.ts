@@ -1,4 +1,4 @@
-import type { DotfilesCandidate, ScanResult, ScanWarning } from "../domain/types";
+import type { SearchCandidate, ScanResult, ScanWarning } from "../domain/types";
 import { EXIT_CODE_PARTIAL_FAILURE, EXIT_CODE_RATE_LIMIT_EXHAUSTED, EXIT_CODE_SUCCESS } from "../domain/types";
 import { GitHubClientError } from "../github/client";
 
@@ -13,7 +13,7 @@ export interface ScanFailureEvent {
 
 export interface ScanOutcomePolicy {
   recordFailure(event: ScanFailureEvent): ScanFailureDecision;
-  buildResult(candidates: readonly DotfilesCandidate[]): ScanResult;
+  buildResult(candidates: readonly SearchCandidate[]): ScanResult;
 }
 
 export function createScanOutcomePolicy(): ScanOutcomePolicy {
